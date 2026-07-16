@@ -13,4 +13,16 @@ alter table demand_zones enable row level security;
 
 -- Backend services use the service-role key. Anonymous access remains
 -- read-only, matching the existing ambulance and hospital reference data.
-create policy "demand_zones_read_anon" on demand_zones for select using (true);
+do $$
+begin
+    if not exists (
+        select 1
+        from pg_policies
+        where schemaname = 'public'
+          and tablename = 'demand_zones'
+          and policyname = 'demand_zones_read_anon'
+    ) then
+        execute 'create policy "demand_zones_read_anon" on demand_zones for select using (true)';
+    end if;
+end
+$$;
