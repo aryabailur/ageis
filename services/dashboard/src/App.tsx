@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useDispatchStore } from "./store/dispatchStore";
 import { useVoiceStore } from "./store/voiceStore";
+import { useDeviceLocation } from "./hooks/useDeviceLocation";
 import type { Hospital, Priority } from "./types";
 import { CommandHeader } from "./components/CommandHeader";
 import { CityMap } from "./components/CityMap";
@@ -22,6 +23,12 @@ import { ComplexityPanel } from "./components/ComplexityPanel";
 import { SurvivalMeter } from "./components/SurvivalMeter";
 import { BaselineComparison } from "./components/BaselineComparison";
 
+// Falls back to the seeded demo location (Bandra West, Mumbai) only when
+// the browser has no real position yet -- e.g. geolocation permission not
+// granted. Real calls should always prefer the caller's actual position.
+const FALLBACK_LAT = 19.0596;
+const FALLBACK_LNG = 72.8295;
+
 export default function App() {
   const {
     current,
@@ -36,6 +43,10 @@ export default function App() {
     applyReview,
     loadFleet,
   } = useDispatchStore();
+
+  const device = useDeviceLocation();
+  const callerLat = device.lat ?? FALLBACK_LAT;
+  const callerLng = device.lng ?? FALLBACK_LNG;
 
   useEffect(() => {
     loadFleet();
@@ -114,8 +125,8 @@ export default function App() {
     startDispatch({
       call_id: `call-${Date.now().toString(36)}`,
       raw_transcript: transcript,
-      caller_lat: 42.3601,
-      caller_lng: -71.0589,
+      caller_lat: callerLat,
+      caller_lng: callerLng,
     });
   }
 
