@@ -3,3 +3,4 @@ langgraph>=0.2
 mcp>=1.2
 fastapi
 uvicorn
+openai>=1.0

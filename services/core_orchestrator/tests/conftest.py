@@ -15,6 +15,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app import mcp_client
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -60,3 +62,16 @@ def mcp_services():
     for proc in procs:
         proc.terminate()
         proc.wait(timeout=5)
+
+
+@pytest.fixture(autouse=True)
+async def close_mcp_sessions_after_each_test():
+    """mcp_client caches one session per (base_url, event loop) (see its
+    module docstring). pytest-asyncio hands every test function its own
+    loop, so a session created during this test must be explicitly closed
+    before that loop goes away -- otherwise Python's GC finalizes it later
+    in whatever loop happens to be running, crashing with a cross-task
+    cancel-scope error that has nothing to do with the test that trips it.
+    """
+    yield
+    await mcp_client.close_sessions_for_current_loop()

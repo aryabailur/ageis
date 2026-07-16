@@ -7,9 +7,10 @@ only if a step grows real complexity of its own.
 from __future__ import annotations
 
 from aegis_contracts import DispatchState, PrearrivalGuidance, Priority, TimingEntry, TranscriptQuality, TriageResult
+from aegis_contracts.fallback import call_with_fallback
 from aegis_contracts.timing import clock
 
-from ..extractors import get_extractor
+from ..extractors import keyword_extract, llm_extract_async
 from ..protocols import lookup_prearrival_protocol
 
 
@@ -19,10 +20,22 @@ def ingest_call(state: DispatchState) -> dict:
     return {"timing_log": state.timing_log + [entry]}
 
 
-def extract_incident(state: DispatchState) -> dict:
+async def extract_incident(state: DispatchState) -> dict:
     start = clock()
-    extractor = get_extractor()
-    incident = extractor(state.raw_transcript, state.caller_lat, state.caller_lng)
+
+    async def call_llm():
+        return await llm_extract_async(state.raw_transcript, state.caller_lat, state.caller_lng)
+
+    result = await call_with_fallback(
+        call_llm,
+        lambda: keyword_extract(state.raw_transcript, state.caller_lat, state.caller_lng),
+        primary_label="llm_extraction",
+        fallback_label="keyword_extractor_fallback",
+    )
+    incident = result.value
+    if result.used_fallback:
+        incident = incident.model_copy(update={"extraction_data_source": result.data_source})
+
     entry = TimingEntry(step="extract_incident", start=start, end=clock())
     return {"incident": incident, "timing_log": state.timing_log + [entry]}
 

@@ -6,7 +6,9 @@ from Python (see tests/) without any HTTP layer at all.
 
 from __future__ import annotations
 
+import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -20,7 +22,30 @@ from .graph import compiled_app
 from .mcp_client import call_tool
 from .run_batch import run_batch
 
-app = FastAPI(title="AEGIS Core Orchestrator")
+logger = logging.getLogger("aegis.main")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # mcp_client now holds one persistent session per service instead of
+    # negotiating a fresh one per call; pre-establish those sessions here
+    # so the negotiation cost (and the transport race that used to live
+    # in it -- see mcp_client.py) happens at startup, not on a user's
+    # first real request.
+    registry = load_default_registry()
+    for service_name, tool_name, args in (
+        ("hospital_ambulance_data", "get_hospital_capacity", {"hospital_id": "hosp-general"}),
+        ("routing", "get_route_estimate", {"origin_lat": 0, "origin_lng": 0, "dest_lat": 0, "dest_lng": 0}),
+    ):
+        try:
+            service = registry.get(service_name)
+            await call_tool(service.base_url, tool_name, args)
+        except Exception as exc:  # noqa: BLE001 - best-effort warm-up, never blocks startup
+            logger.info("warm-up call to %s did not complete (%s)", service_name, exc)
+    yield
+
+
+app = FastAPI(title="AEGIS Core Orchestrator", lifespan=lifespan)
 
 # The React dashboard calls this API directly from the browser. Dev-mode
 # origins only; tighten this to the deployed dashboard's real origin
