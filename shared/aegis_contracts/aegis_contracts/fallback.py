@@ -37,7 +37,14 @@ async def call_with_fallback(
     try:
         value = await asyncio.wait_for(primary(), timeout=timeout_s)
         return FallbackResult(value=value, data_source=primary_label, used_fallback=False)
-    except Exception as exc:  # noqa: BLE001 - any failure degrades, by design
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:  # noqa: BLE001 - any failure degrades, by design
+        # BaseException, not Exception: under real concurrent load the MCP
+        # transport's internal task groups can surface a (Base)ExceptionGroup
+        # wrapping a cancellation, which `except Exception` does not catch --
+        # and an uncaught failure here defeats the entire point of this
+        # helper. See services/core_orchestrator/tests/test_run_batch.py.
         logger.warning(
             "primary call '%s' failed (%s); falling back to '%s'",
             primary_label,

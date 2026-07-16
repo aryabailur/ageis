@@ -14,7 +14,13 @@ import pytest
 from aegis_contracts import DispatchState, DispatchStatus, Priority
 from app import reservation_store
 from app.graph import compiled_app
-from app.nodes import compute_route_estimates, dispatch_lifecycle, ingest_extract_triage, load_resources
+from app.nodes import (
+    compute_route_estimates,
+    dispatch_lifecycle,
+    ingest_extract_triage,
+    load_resources,
+    rank_assignments,
+)
 
 DEMO_PATIENT_LAT = 42.3601
 DEMO_PATIENT_LNG = -71.0589
@@ -32,7 +38,13 @@ def frozen_clock(monkeypatch):
     def fake_clock():
         return next(counter) * 0.01
 
-    for module in (ingest_extract_triage, load_resources, compute_route_estimates, dispatch_lifecycle):
+    for module in (
+        ingest_extract_triage,
+        load_resources,
+        compute_route_estimates,
+        rank_assignments,
+        dispatch_lifecycle,
+    ):
         monkeypatch.setattr(module, "clock", fake_clock)
     yield
 
@@ -77,14 +89,31 @@ async def test_clean_cardiac_dispatch_reaches_completed_with_no_human_review():
     assert final.reservation is not None
     assert final.reservation.confirmed
 
+    assert final.prearrival is not None
+    assert final.prearrival.protocol_id == "CPR_HANDS_ONLY"
+    assert final.prearrival.metronome_bpm == 110
+
+    # Whether this particular run crossed SPAWN_THRESHOLD depends on live
+    # MCP timing (see test_rank_assignments.py for a deterministic version
+    # of that decision) -- what must always hold is internal consistency:
+    # spawned_workers and reverified_candidates agree on what happened.
+    viable_count = len([c for c in final.candidates if not c.rejected])
+    if final.spawned_workers > 0:
+        assert final.spawned_workers == viable_count
+        assert len(final.reverified_candidates) == viable_count
+    else:
+        assert final.reverified_candidates == []
+
     step_names = [entry.step for entry in final.timing_log]
     for expected_step in (
         "ingest_call",
         "extract_incident",
         "apply_triage_rules",
+        "dispatch_prearrival_guidance",
         "load_resources",
         "compute_route_estimates",
         "rank_assignments",
+        "finalize_ranking",
         "validate_proposal",
         "reserve_ambulance",
         "validate_reservation",
@@ -92,6 +121,9 @@ async def test_clean_cardiac_dispatch_reaches_completed_with_no_human_review():
         "monitor_or_finish",
     ):
         assert expected_step in step_names, f"missing timing_log entry for {expected_step}"
+    # dispatch_prearrival_guidance must fire before any resource lookup --
+    # help starts before an ambulance is even chosen.
+    assert step_names.index("dispatch_prearrival_guidance") < step_names.index("load_resources")
 
 
 @pytest.mark.asyncio

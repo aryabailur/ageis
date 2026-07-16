@@ -1,18 +1,16 @@
-"""The AEGIS CORE-tier LangGraph workflow.
+"""The AEGIS LangGraph workflow.
 
-ingest_call -> extract_incident -> apply_triage_rules
+ingest_call -> extract_incident -> apply_triage_rules -> dispatch_prearrival_guidance
   -> [intake_review_gate] -> await_review | load_resources
-load_resources -> compute_route_estimates -> rank_assignments -> validate_proposal
+load_resources -> compute_route_estimates -> rank_assignments
+  -> [spawn_reverification] -> finalize_ranking | reverify_candidate* (parallel, Send)
+reverify_candidate -> finalize_ranking
+finalize_ranking -> validate_proposal
   -> [assignment_review_gate] -> await_review | reserve_ambulance
-reserve_ambulance -> validate_reservation
+reserve_ambulance -> validate_reservation (re-checks the LIVE hospital status)
   -> [after_validate_reservation] -> simulate_dispatch | replan | fail_safely
 replan -> [after_replan] -> validate_proposal | fail_safely
 simulate_dispatch -> monitor_or_finish -> END
-
-dispatch_prearrival_guidance (HIGH-VALUE tier CPR coaching) is NOT wired in
-here yet — the contract already reserves `prearrival` on DispatchState so
-attaching that node later needs no schema change, only one new edge right
-after apply_triage_rules.
 """
 
 from __future__ import annotations
@@ -31,10 +29,13 @@ def build_graph() -> StateGraph:
     graph.add_node("ingest_call", ingest_extract_triage.ingest_call)
     graph.add_node("extract_incident", ingest_extract_triage.extract_incident)
     graph.add_node("apply_triage_rules", ingest_extract_triage.apply_triage_rules)
+    graph.add_node("dispatch_prearrival_guidance", ingest_extract_triage.dispatch_prearrival_guidance)
     graph.add_node("await_review", gates.mark_awaiting_review)
     graph.add_node("load_resources", load_resources.load_resources)
     graph.add_node("compute_route_estimates", route_estimates.compute_route_estimates)
     graph.add_node("rank_assignments", rank_assignments.rank_assignments)
+    graph.add_node("reverify_candidate", rank_assignments.reverify_candidate)
+    graph.add_node("finalize_ranking", rank_assignments.finalize_ranking)
     graph.add_node("validate_proposal", dispatch_lifecycle.validate_proposal)
     graph.add_node("reserve_ambulance", dispatch_lifecycle.reserve_ambulance)
     graph.add_node("validate_reservation", dispatch_lifecycle.validate_reservation)
@@ -46,16 +47,24 @@ def build_graph() -> StateGraph:
     graph.set_entry_point("ingest_call")
     graph.add_edge("ingest_call", "extract_incident")
     graph.add_edge("extract_incident", "apply_triage_rules")
+    graph.add_edge("apply_triage_rules", "dispatch_prearrival_guidance")
 
     graph.add_conditional_edges(
-        "apply_triage_rules",
+        "dispatch_prearrival_guidance",
         gates.intake_review_gate,
         {"await_review": "await_review", "load_resources": "load_resources", "fail_safely": "fail_safely"},
     )
 
     graph.add_edge("load_resources", "compute_route_estimates")
     graph.add_edge("compute_route_estimates", "rank_assignments")
-    graph.add_edge("rank_assignments", "validate_proposal")
+
+    graph.add_conditional_edges(
+        "rank_assignments",
+        gates.spawn_reverification,
+        ["finalize_ranking", "reverify_candidate"],
+    )
+    graph.add_edge("reverify_candidate", "finalize_ranking")
+    graph.add_edge("finalize_ranking", "validate_proposal")
 
     graph.add_conditional_edges(
         "validate_proposal",

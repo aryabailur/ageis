@@ -323,5 +323,226 @@ button:disabled {
 
 .complexity-gauge-fill {
   height: 100%;
+  background: var(--info);
+  transition: width 0.4s ease;
+}
+
+.complexity-gauge-hot {
   background: var(--warning);
+}
+
+.complexity-spawn-note {
+  font-size: 13px;
+  margin: 10px 0 6px;
+}
+
+.worker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.worker-chip {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+
+.worker-chip-rejected {
+  background: var(--error-bg);
+  color: var(--error);
+  border-color: var(--error);
+}
+
+/* --- pre-arrival coaching --- */
+
+.card-coaching {
+  border-color: var(--error);
+  background: linear-gradient(var(--surface), var(--surface)), var(--error-bg);
+}
+
+.coaching-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metronome-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.metronome-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--error);
+  animation-name: metronome-pulse;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-out;
+}
+
+@keyframes metronome-pulse {
+  0% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.85);
+    opacity: 0.55;
+  }
+}
+
+.metronome-label {
+  font-weight: 700;
+  color: var(--error);
+}
+
+.coaching-steps {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.btn-small {
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-danger {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* --- survival meter --- */
+
+.survival-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.survival-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.survival-time {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 2px 0 6px;
+}
+
+.survival-bar-track {
+  height: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.survival-bar {
+  height: 100%;
+  transition: width 0.6s ease;
+}
+
+.survival-bar-aegis {
+  background: var(--success);
+}
+
+.survival-bar-naive {
+  background: var(--error);
+}
+
+.survival-value {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.survival-gap {
+  margin-top: 14px;
+  font-size: 15px;
+  color: var(--success);
+}
+
+.survival-footnote {
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+/* --- baseline comparison --- */
+
+.baseline-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.baseline-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 10px;
+}
+
+.baseline-table td {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.baseline-rowlabel {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.baseline-wrong {
+  color: var(--error);
+}
+
+.baseline-why {
+  font-size: 12px;
+  margin-top: 3px;
+  color: var(--error);
+}
+
+.baseline-why-ok {
+  color: var(--success);
+}
+
+/* --- demo controls --- */
+
+.card-admin {
+  border-style: dashed;
+}
+
+.diversion-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.diversion-row select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--text);
+  font-size: 13px;
 }

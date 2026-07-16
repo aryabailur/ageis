@@ -74,6 +74,21 @@ export interface Reservation {
   confirmed: boolean;
 }
 
+export interface PrearrivalGuidance {
+  protocol_id: string;
+  chief_complaint: string;
+  steps: string[];
+  metronome_bpm: number | null;
+  started_at: number;
+  data_source: string;
+}
+
+export interface NaiveBaseline {
+  ambulance: Ambulance;
+  hospital: Hospital;
+  data_source: string;
+}
+
 export interface DispatchState {
   call_id: string;
   status: DispatchStatus;
@@ -82,17 +97,20 @@ export interface DispatchState {
   caller_lng: number | null;
   incident: Incident | null;
   triage: TriageResult | null;
-  prearrival: unknown | null;
+  prearrival: PrearrivalGuidance | null;
   available_ambulances: unknown[];
   available_hospitals: unknown[];
   resource_data_source: [string, string] | null;
   candidates: CandidateAssignment[];
+  reverified_candidates: CandidateAssignment[];
   selected: CandidateAssignment | null;
   reservation: Reservation | null;
+  hospital_status_at_validation: string | null;
   complexity_score: number | null;
   spawned_workers: number;
   replan_count: number;
   max_replans: number;
+  tried_pairs: string[];
   review_reason: string | null;
   failure_reason: string | null;
   timing_log: TimingEntry[];

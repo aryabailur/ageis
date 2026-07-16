@@ -1,4 +1,4 @@
-"""ingest_call -> extract_incident -> apply_triage_rules.
+"""ingest_call -> extract_incident -> apply_triage_rules -> dispatch_prearrival_guidance.
 
 Kept in one module because each step is a handful of lines; split further
 only if a step grows real complexity of its own.
@@ -6,10 +6,11 @@ only if a step grows real complexity of its own.
 
 from __future__ import annotations
 
-from aegis_contracts import DispatchState, Priority, TimingEntry, TranscriptQuality, TriageResult
+from aegis_contracts import DispatchState, PrearrivalGuidance, Priority, TimingEntry, TranscriptQuality, TriageResult
 from aegis_contracts.timing import clock
 
 from ..extractors import get_extractor
+from ..protocols import lookup_prearrival_protocol
 
 
 def ingest_call(state: DispatchState) -> dict:
@@ -67,3 +68,21 @@ def apply_triage_rules(state: DispatchState) -> dict:
     triage = _apply_rules(state.incident)
     entry = TimingEntry(step="apply_triage_rules", start=start, end=clock())
     return {"triage": triage, "timing_log": state.timing_log + [entry]}
+
+
+def dispatch_prearrival_guidance(state: DispatchState) -> dict:
+    """Fires immediately after triage, before the review gate or any
+    resource lookup -- help starts before an ambulance has even been
+    chosen. Pure protocol-table lookup (see protocols.py); never LLM,
+    never blocks, never affects the dispatch decision."""
+    start = clock()
+    protocol_id, steps, bpm = lookup_prearrival_protocol(state.incident)
+    prearrival = PrearrivalGuidance(
+        protocol_id=protocol_id,
+        chief_complaint=state.incident.chief_complaint,
+        steps=steps,
+        metronome_bpm=bpm,
+        started_at=start,
+    )
+    entry = TimingEntry(step="dispatch_prearrival_guidance", start=start, end=clock())
+    return {"prearrival": prearrival, "timing_log": state.timing_log + [entry]}

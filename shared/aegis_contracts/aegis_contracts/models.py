@@ -9,8 +9,9 @@ describes shapes.
 
 from __future__ import annotations
 
+import operator
 from enum import Enum
-from typing import Optional
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -149,14 +150,31 @@ class DispatchState(BaseModel):
     resource_data_source: Optional[tuple[str, str]] = None
 
     candidates: list[CandidateAssignment] = Field(default_factory=list)
+    # Written by parallel reverify_candidate workers spawned via the Send
+    # API when complexity_score is high enough; operator.add lets LangGraph
+    # concatenate each worker's single-item list instead of erroring on a
+    # concurrent write to the same key. finalize_ranking reads this list
+    # (when spawned_workers > 0) to pick the winner.
+    reverified_candidates: Annotated[list[CandidateAssignment], operator.add] = Field(default_factory=list)
     selected: Optional[CandidateAssignment] = None
     reservation: Optional[Reservation] = None
 
     complexity_score: Optional[float] = None
     spawned_workers: int = 0
 
+    # Freshness check performed by validate_reservation right before
+    # committing -- this is what actually notices a hospital flipping to
+    # DIVERSION mid-flight (state.selected.hospital.status is a snapshot
+    # from when it was ranked, potentially stale by the time we get here).
+    hospital_status_at_validation: Optional[str] = None
+
     replan_count: int = 0
     max_replans: int = 2
+    # "ambulance_id|hospital_id" pairs that already failed reservation or
+    # validation -- replan filters ALL of these out, not just the current
+    # selection, so the bounded budget is never wasted re-trying a pair
+    # that's already known bad.
+    tried_pairs: list[str] = Field(default_factory=list)
 
     review_reason: Optional[str] = None
     failure_reason: Optional[str] = None

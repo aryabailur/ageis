@@ -1,0 +1,70 @@
+import { useEffect, useRef, useState } from "react";
+import type { PrearrivalGuidance } from "../types";
+
+/**
+ * Renders state.prearrival: deterministic protocol steps plus, when the
+ * protocol carries a metronome_bpm (CPR at 110), a pulsing dot and an
+ * audio click at that exact rate so the caller can pace compressions.
+ */
+export function CoachingPanel({ prearrival }: { prearrival: PrearrivalGuidance }) {
+  const [audioOn, setAudioOn] = useState(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const bpm = prearrival.metronome_bpm;
+  const periodMs = bpm ? 60000 / bpm : null;
+
+  useEffect(() => {
+    if (!audioOn || !periodMs) return;
+
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioContext();
+    }
+    const ctx = audioCtxRef.current;
+
+    const interval = setInterval(() => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    }, periodMs);
+
+    return () => clearInterval(interval);
+  }, [audioOn, periodMs]);
+
+  useEffect(() => {
+    return () => {
+      audioCtxRef.current?.close();
+    };
+  }, []);
+
+  return (
+    <div className="card card-coaching">
+      <div className="coaching-header">
+        <h2>
+          Pre-arrival coaching — {prearrival.protocol_id.replace(/_/g, " ")}
+        </h2>
+        <span className="pill pill-success">source: {prearrival.data_source}</span>
+      </div>
+
+      {bpm && periodMs && (
+        <div className="metronome-row">
+          <span className="metronome-dot" style={{ animationDuration: `${periodMs}ms` }} />
+          <span className="metronome-label">{bpm} compressions / minute</span>
+          <button type="button" className="btn-small" onClick={() => setAudioOn((on) => !on)}>
+            {audioOn ? "Mute metronome" : "Play metronome"}
+          </button>
+        </div>
+      )}
+
+      <ol className="coaching-steps">
+        {prearrival.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+    </div>
+  );
+}
