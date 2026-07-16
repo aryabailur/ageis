@@ -1,4 +1,5 @@
 import type { TimingEntry } from "../types";
+import { stepLabel } from "../glossary";
 
 interface Row {
   step: string;
@@ -15,15 +16,22 @@ export function TimingBreakdown({ timingLog }: { timingLog: TimingEntry[] }) {
 
   return (
     <div className="card">
-      <h2>Timing breakdown</h2>
+      <h2>Every step AEGIS took</h2>
       <div className="timing-total">
-        Total dispatch time: <strong>{totalMs.toFixed(1)} ms</strong>
+        Total time from call received to dispatch confirmed: <strong>{totalMs.toFixed(1)} ms</strong>
       </div>
       <table className="timing-table">
         <tbody>
-          {rows.map((row) => (
-            <tr key={row.step}>
-              <td className="timing-step">{row.step}</td>
+          {rows.map((row, index) => (
+            // Index in the key, not just step name: a replanned call
+            // legitimately re-runs validate_proposal/reserve_ambulance/
+            // validate_reservation a second time, so step name alone
+            // isn't a unique identity for this chronological log.
+            <tr key={`${row.step}-${index}`}>
+              <td className="timing-step">
+                {stepLabel(row.step)}
+                <span className="timing-step-code">{row.step}</span>
+              </td>
               <td className="timing-bar-cell">
                 <div className="timing-bar" style={{ width: `${((row.durationMs ?? 0) / maxMs) * 100}%` }} />
               </td>

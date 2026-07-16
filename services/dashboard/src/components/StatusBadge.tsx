@@ -8,6 +8,14 @@ const STYLES: Record<DispatchStatus, string> = {
   FAILED: "badge badge-error",
 };
 
+const LABELS: Record<DispatchStatus, string> = {
+  IN_PROGRESS: "In progress",
+  DISPATCHED: "Ambulance dispatched",
+  COMPLETED: "Complete",
+  AWAITING_REVIEW: "Needs human review",
+  FAILED: "Could not dispatch",
+};
+
 export function StatusBadge({ status }: { status: DispatchStatus }) {
-  return <span className={STYLES[status]}>{status.replace("_", " ")}</span>;
+  return <span className={STYLES[status]}>{LABELS[status]}</span>;
 }

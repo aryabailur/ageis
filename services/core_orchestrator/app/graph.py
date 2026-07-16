@@ -23,7 +23,7 @@ from .nodes import dispatch_lifecycle, gates, ingest_extract_triage, load_resour
 from .nodes import compute_route_estimates as route_estimates
 
 
-def build_graph() -> StateGraph:
+def build_graph(entry_point: str = "ingest_call") -> StateGraph:
     graph = StateGraph(DispatchState)
 
     graph.add_node("ingest_call", ingest_extract_triage.ingest_call)
@@ -44,7 +44,7 @@ def build_graph() -> StateGraph:
     graph.add_node("replan", dispatch_lifecycle.replan)
     graph.add_node("fail_safely", dispatch_lifecycle.fail_safely)
 
-    graph.set_entry_point("ingest_call")
+    graph.set_entry_point(entry_point)
     graph.add_edge("ingest_call", "extract_incident")
     graph.add_edge("extract_incident", "apply_triage_rules")
     graph.add_edge("apply_triage_rules", "dispatch_prearrival_guidance")
@@ -96,3 +96,23 @@ def build_graph() -> StateGraph:
 
 def compiled_app():
     return build_graph().compile()
+
+
+def resume_from_resources_graph():
+    """Resume point for an intake-gate override: human supplied a
+    corrected TriageResult, so re-run resource loading through ranking
+    against it. Shares every node function and edge with build_graph() --
+    only the START edge differs (build_graph(entry_point=...) sets it
+    once, rather than bolting on a second START edge via set_entry_point,
+    which LangGraph treats as an additional parallel entry rather than a
+    replacement -- that bug is what made ingest_call and the resume node
+    run concurrently in the same superstep, both writing timing_log and
+    tripping LangGraph's single-writer-per-step check)."""
+    return build_graph(entry_point="load_resources").compile()
+
+
+def resume_from_reservation_graph():
+    """Resume point for an assignment-gate override: ranking already
+    ran and found no valid candidate, so human supplies/forces a
+    CandidateAssignment directly and we resume at reservation."""
+    return build_graph(entry_point="reserve_ambulance").compile()

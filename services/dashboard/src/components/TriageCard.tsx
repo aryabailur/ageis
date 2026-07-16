@@ -1,4 +1,5 @@
 import type { TriageResult } from "../types";
+import { ALS_EXPLAINER, PRIORITY_LABELS, ruleLabel, specialtyLabel } from "../glossary";
 
 const PRIORITY_CLASS: Record<string, string> = {
   P1: "pill pill-error",
@@ -10,25 +11,30 @@ const PRIORITY_CLASS: Record<string, string> = {
 export function TriageCard({ triage }: { triage: TriageResult }) {
   return (
     <div className="card">
-      <h2>Triage</h2>
+      <h2>Triage — how AEGIS classified this call</h2>
       <dl className="field-list">
-        <dt>Priority</dt>
+        <dt>Severity</dt>
         <dd>
           <span className={PRIORITY_CLASS[triage.priority]}>{triage.priority}</span>
+          <span className="muted field-inline-note"> — {PRIORITY_LABELS[triage.priority]}</span>
         </dd>
 
-        <dt>Requires ALS</dt>
-        <dd>{triage.requires_als ? <span className="pill pill-error">yes</span> : <span className="pill pill-success">no</span>}</dd>
-
-        <dt>Required hospital specialty</dt>
-        <dd>{triage.required_hospital_specialty ?? <span className="muted">none</span>}</dd>
-
-        <dt>Rules fired</dt>
+        <dt>Needs a paramedic crew?</dt>
         <dd>
+          {triage.requires_als ? <span className="pill pill-error">yes — ALS</span> : <span className="pill pill-success">no — basic crew OK</span>}
+          <span className="muted field-inline-note"> {ALS_EXPLAINER}</span>
+        </dd>
+
+        <dt>Hospital needs</dt>
+        <dd>{specialtyLabel(triage.required_hospital_specialty)}</dd>
+
+        <dt>Why (rules that fired)</dt>
+        <dd className="rule-list">
           {triage.rule_ids.map((rule) => (
-            <span key={rule} className="tag">
-              {rule}
-            </span>
+            <div key={rule} className="rule-row">
+              <span className="tag">{rule}</span>
+              <span className="muted rule-explain">{ruleLabel(rule)}</span>
+            </div>
           ))}
         </dd>
       </dl>

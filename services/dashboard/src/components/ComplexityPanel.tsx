@@ -1,4 +1,5 @@
 import type { CandidateAssignment } from "../types";
+import { ambulanceDisplayName, hospitalDisplayName } from "../glossary";
 
 /**
  * Shows the targeted-parallel-spawning decision: the deterministic
@@ -20,7 +21,11 @@ export function ComplexityPanel({
 
   return (
     <div className="card">
-      <h2>Ranking complexity</h2>
+      <h2>How close was this call?</h2>
+      <p className="muted panel-intro">
+        When the top two options score nearly the same, AEGIS double-checks each one independently
+        instead of just trusting the first-pass ranking.
+      </p>
       <div className="complexity-gauge">
         <div
           className={`complexity-gauge-fill ${spawned ? "complexity-gauge-hot" : ""}`}
@@ -28,14 +33,15 @@ export function ComplexityPanel({
         />
       </div>
       <p className="muted">
-        complexity_score = {complexityScore?.toFixed(2) ?? "—"} (spawn threshold 0.50)
+        {pct}% too-close-to-call{" "}
+        <span className="field-inline-note">(double-checks kick in above 50%)</span>
       </p>
 
       {spawned ? (
         <>
           <p className="complexity-spawn-note">
-            Near-tie detected — spawned {spawnedWorkers} parallel reverification worker
-            {spawnedWorkers === 1 ? "" : "s"}:
+            Near-tie detected — ran {spawnedWorkers} independent double-check{spawnedWorkers === 1 ? "" : "s"} in
+            parallel:
           </p>
           <div className="worker-chips">
             {reverifiedCandidates.map((candidate) => (
@@ -43,14 +49,14 @@ export function ComplexityPanel({
                 key={`${candidate.ambulance.id}-${candidate.hospital.id}`}
                 className={`worker-chip ${candidate.rejected ? "worker-chip-rejected" : ""}`}
               >
-                {candidate.ambulance.id} → {candidate.hospital.id}
-                {candidate.rejected ? " ✕" : ` · ${candidate.score?.toFixed(2)}`}
+                {ambulanceDisplayName(candidate.ambulance.id)} → {hospitalDisplayName(candidate.hospital.id)}
+                {candidate.rejected ? " ✕ ruled out" : ` · lower is better: ${candidate.score?.toFixed(2)}`}
               </span>
             ))}
           </div>
         </>
       ) : (
-        <p className="muted">Clear winner — no parallel workers needed.</p>
+        <p className="muted">Clear winner — no double-check needed.</p>
       )}
     </div>
   );

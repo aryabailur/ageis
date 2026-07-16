@@ -1,0 +1,122 @@
+/* AEGIS command-center design tokens. Single source of truth for color,
+   spacing, motion, and elevation -- components should reference these
+   variables, not hardcoded values, so the theme stays consistent and
+   themeable (light mode overrides at the bottom). */
+
+:root {
+  /* --- surface & text --- */
+  --bg: #0a0e17;
+  --bg-raised: #10151f;
+  --surface: #141a26;
+  --surface-hover: #1a2130;
+  --surface-2: #1c2333;
+  --border: #232b3d;
+  --border-strong: #2f3950;
+  --text: #eef1f8;
+  --text-muted: #8992a9;
+  --text-faint: #5c6580;
+
+  /* --- semantic status --- */
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --success-border: rgba(52, 211, 153, 0.35);
+  --warning: #f2b84b;
+  --warning-bg: rgba(242, 184, 75, 0.12);
+  --warning-border: rgba(242, 184, 75, 0.35);
+  --error: #f0576b;
+  --error-bg: rgba(240, 87, 107, 0.13);
+  --error-border: rgba(240, 87, 107, 0.35);
+  --info: #5b8def;
+  --info-bg: rgba(91, 141, 239, 0.12);
+  --info-border: rgba(91, 141, 239, 0.35);
+  --accent: #7c9eff;
+
+  /* --- severity scale (SEV1 hottest -> SEV3 coolest) --- */
+  --sev1: #f0576b;
+  --sev1-bg: rgba(240, 87, 107, 0.14);
+  --sev2: #f2b84b;
+  --sev2-bg: rgba(242, 184, 75, 0.14);
+  --sev3: #34d399;
+  --sev3-bg: rgba(52, 211, 153, 0.14);
+
+  /* --- spacing scale --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* --- radius --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  /* --- elevation --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --shadow-glow-error: 0 0 0 1px var(--error-border), 0 0 24px rgba(240, 87, 107, 0.18);
+  --shadow-glow-warning: 0 0 0 1px var(--warning-border), 0 0 24px rgba(242, 184, 75, 0.18);
+  --shadow-glow-success: 0 0 0 1px var(--success-border), 0 0 24px rgba(52, 211, 153, 0.14);
+
+  /* --- motion --- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+  --dur-slow: 420ms;
+
+  /* --- type scale --- */
+  --font-sans: -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+  --text-2xl: 28px;
+
+  color-scheme: dark;
+}
+
+/* Light mode: same semantic roles, inverted surfaces. Kicks in either by
+   OS preference or an explicit data-theme attribute so the artifact/host
+   toggle (if any) can force a side. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f4f6fb;
+    --bg-raised: #ffffff;
+    --surface: #ffffff;
+    --surface-hover: #f1f4fa;
+    --surface-2: #eef1f8;
+    --border: #dde3ef;
+    --border-strong: #c7d0e3;
+    --text: #131826;
+    --text-muted: #5b6478;
+    --text-faint: #8891a6;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6fb;
+  --bg-raised: #ffffff;
+  --surface: #ffffff;
+  --surface-hover: #f1f4fa;
+  --surface-2: #eef1f8;
+  --border: #dde3ef;
+  --border-strong: #c7d0e3;
+  --text: #131826;
+  --text-muted: #5b6478;
+  --text-faint: #8891a6;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}

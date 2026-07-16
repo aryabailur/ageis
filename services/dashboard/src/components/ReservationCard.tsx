@@ -1,21 +1,23 @@
 import type { Reservation } from "../types";
+import { ambulanceDisplayName, hospitalDisplayName } from "../glossary";
 
 export function ReservationCard({ reservation }: { reservation: Reservation | null }) {
   return (
     <div className="card">
-      <h2>Reservation</h2>
+      <h2>Booking</h2>
+      <p className="muted panel-intro">
+        The lock that prevents two calls from double-booking the same ambulance — enforced by the
+        database, not just app logic.
+      </p>
       {reservation ? (
         <dl className="field-list">
-          <dt>Reservation ID</dt>
-          <dd>{reservation.reservation_id}</dd>
-
           <dt>Ambulance</dt>
-          <dd>{reservation.ambulance_id}</dd>
+          <dd>{ambulanceDisplayName(reservation.ambulance_id)}</dd>
 
           <dt>Hospital</dt>
-          <dd>{reservation.hospital_id}</dd>
+          <dd>{hospitalDisplayName(reservation.hospital_id)}</dd>
 
-          <dt>Confirmed</dt>
+          <dt>Status</dt>
           <dd>
             {reservation.confirmed ? (
               <span className="pill pill-success">confirmed</span>
@@ -23,9 +25,12 @@ export function ReservationCard({ reservation }: { reservation: Reservation | nu
               <span className="pill pill-warning">pending</span>
             )}
           </dd>
+
+          <dt>Booking ID</dt>
+          <dd className="muted field-mono">{reservation.reservation_id}</dd>
         </dl>
       ) : (
-        <p className="muted">No reservation was made.</p>
+        <p className="muted">No booking made yet.</p>
       )}
     </div>
   );

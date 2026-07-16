@@ -89,6 +89,16 @@ export interface NaiveBaseline {
   data_source: string;
 }
 
+export interface StreamEvent {
+  node: string;
+  state: DispatchState;
+}
+
+export interface FleetSnapshot {
+  ambulances: Ambulance[];
+  hospitals: Hospital[];
+}
+
 export interface DispatchState {
   call_id: string;
   status: DispatchStatus;
