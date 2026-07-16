@@ -1,0 +1,48 @@
+services:
+  hospital_ambulance_data:
+    build:
+      context: .
+      dockerfile: services/hospital_ambulance_data/Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+
+  routing:
+    build:
+      context: .
+      dockerfile: services/routing/Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env # MAPBOX_API_KEY
+
+  core_orchestrator:
+    build:
+      context: .
+      dockerfile: services/core_orchestrator/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (for reservations)
+    environment:
+      - AEGIS_SERVICE_HOSPITAL_AMBULANCE_DATA_URL=http://hospital_ambulance_data:8001
+      - AEGIS_SERVICE_ROUTING_URL=http://routing:8002
+    depends_on:
+      - hospital_ambulance_data
+      - routing
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
+      args:
+        # Baked in at build time: this becomes a browser-side fetch target,
+        # so it must be reachable from the host's browser, not just from
+        # inside the compose network -- localhost:8000 (published above),
+        # not http://core_orchestrator:8000.
+        VITE_ORCHESTRATOR_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - core_orchestrator

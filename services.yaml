@@ -1,0 +1,41 @@
+# The AEGIS plugin registry.
+#
+# This is the ONE file you edit to attach a new microservice. Every service
+# in the system (core-orchestrator, dashboard, future plugins) resolves its
+# peers through aegis_contracts.registry.ServiceRegistry, either by name or
+# by the tool it claims to expose — nobody hardcodes a hostname.
+#
+# base_url can be overridden per-deployment with an env var named
+# AEGIS_SERVICE_<NAME_UPPER>_URL, e.g. AEGIS_SERVICE_ROUTING_URL, without
+# touching this file (used by docker-compose / k8s).
+
+services:
+  - name: hospital_ambulance_data
+    base_url: "http://localhost:8001"
+    kind: mcp
+    health_path: /health
+    tools:
+      - get_eligible_ambulances
+      - get_eligible_hospitals
+      - get_hospital_capacity
+      - get_nearest_ignoring_constraints
+
+  - name: routing
+    base_url: "http://localhost:8002"
+    kind: mcp
+    health_path: /health
+    tools:
+      - get_route_estimate
+
+  - name: core_orchestrator
+    base_url: "http://localhost:8000"
+    kind: http
+    health_path: /health
+    tools:
+      - dispatch
+
+  - name: dashboard
+    base_url: "http://localhost:5173"
+    kind: ui
+    health_path: /
+    tools: []

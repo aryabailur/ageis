@@ -1,0 +1,69 @@
+"""ingest_call -> extract_incident -> apply_triage_rules.
+
+Kept in one module because each step is a handful of lines; split further
+only if a step grows real complexity of its own.
+"""
+
+from __future__ import annotations
+
+from aegis_contracts import DispatchState, Priority, TimingEntry, TranscriptQuality, TriageResult
+from aegis_contracts.timing import clock
+
+from ..extractors import get_extractor
+
+
+def ingest_call(state: DispatchState) -> dict:
+    entry = TimingEntry(step="ingest_call", start=clock())
+    entry.end = clock()
+    return {"timing_log": state.timing_log + [entry]}
+
+
+def extract_incident(state: DispatchState) -> dict:
+    start = clock()
+    extractor = get_extractor()
+    incident = extractor(state.raw_transcript, state.caller_lat, state.caller_lng)
+    entry = TimingEntry(step="extract_incident", start=start, end=clock())
+    return {"incident": incident, "timing_log": state.timing_log + [entry]}
+
+
+# --- deterministic triage rule table (Design Law 1: never LLM judgment) ---
+
+def _apply_rules(incident) -> TriageResult:
+    if incident.transcript_quality == TranscriptQuality.LOW or incident.chief_complaint == "UNKNOWN":
+        return TriageResult(priority=Priority.UNKNOWN, rule_ids=["RULE_UNKNOWN_OR_GARBLED"])
+
+    if incident.chief_complaint == "CARDIAC" and incident.breathing_normally is False:
+        return TriageResult(
+            priority=Priority.P1,
+            rule_ids=["RULE_CARDIAC_NOT_BREATHING"],
+            requires_als=True,
+            required_hospital_specialty="cardiac",
+        )
+
+    if incident.chief_complaint == "CARDIAC":
+        return TriageResult(
+            priority=Priority.P2,
+            rule_ids=["RULE_CARDIAC_STABLE"],
+            requires_als=True,
+            required_hospital_specialty="cardiac",
+        )
+
+    if incident.chief_complaint == "BLEEDING" and incident.major_bleeding:
+        return TriageResult(
+            priority=Priority.P1,
+            rule_ids=["RULE_MAJOR_BLEEDING"],
+            requires_als=True,
+            required_hospital_specialty="trauma",
+        )
+
+    if incident.chief_complaint == "CHOKING":
+        return TriageResult(priority=Priority.P1, rule_ids=["RULE_CHOKING"], requires_als=False)
+
+    return TriageResult(priority=Priority.P3, rule_ids=["RULE_DEFAULT_STABLE"], requires_als=False)
+
+
+def apply_triage_rules(state: DispatchState) -> dict:
+    start = clock()
+    triage = _apply_rules(state.incident)
+    entry = TimingEntry(step="apply_triage_rules", start=start, end=clock())
+    return {"triage": triage, "timing_log": state.timing_log + [entry]}
