@@ -1,9 +1,18 @@
-import { useState } from "react";
-import { dispatch, DispatchRequest, fetchNaiveBaseline } from "./api";
-import type { DispatchState, NaiveBaseline } from "./types";
-import { StatusBadge } from "./components/StatusBadge";
+import { useEffect, useState } from "react";
+import { useDispatchStore } from "./store/dispatchStore";
+import { useVoiceStore } from "./store/voiceStore";
+import type { Hospital, Priority } from "./types";
+import { CommandHeader } from "./components/CommandHeader";
+import { CityMap } from "./components/CityMap";
+import { AgentReasoningPanel } from "./components/AgentReasoningPanel";
+import { ReviewBanner } from "./components/ReviewBanner";
+import { IncidentIntakePanel } from "./components/IncidentIntakePanel";
+import { HospitalCapacityPanel } from "./components/HospitalCapacityPanel";
 import { DispatchForm } from "./components/DispatchForm";
-import { IncidentCard } from "./components/IncidentCard";
+import { IncomingCallCard } from "./components/IncomingCallCard";
+import { PatientDetailsCard } from "./components/PatientDetailsCard";
+import { ConversationTranscriptCard } from "./components/ConversationTranscriptCard";
+import { StatusBadge } from "./components/StatusBadge";
 import { TriageCard } from "./components/TriageCard";
 import { CoachingPanel } from "./components/CoachingPanel";
 import { CandidateList } from "./components/CandidateList";
@@ -12,88 +21,192 @@ import { TimingBreakdown } from "./components/TimingBreakdown";
 import { ComplexityPanel } from "./components/ComplexityPanel";
 import { SurvivalMeter } from "./components/SurvivalMeter";
 import { BaselineComparison } from "./components/BaselineComparison";
-import { DiversionControl } from "./components/DiversionControl";
 
 export default function App() {
-  const [state, setState] = useState<DispatchState | null>(null);
-  const [baseline, setBaseline] = useState<NaiveBaseline | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    current,
+    timeline,
+    baseline,
+    fleet,
+    isRunning,
+    error,
+    callsHandled,
+    callsAutonomous,
+    startDispatch,
+    applyReview,
+    loadFleet,
+  } = useDispatchStore();
 
-  async function handleDispatch(request: DispatchRequest) {
-    setIsLoading(true);
-    setError(null);
-    setBaseline(null);
-    try {
-      // Baseline is fetched in parallel with the dispatch itself -- it's a
-      // read-only comparison view and must never delay the real call.
-      const baselinePromise = fetchNaiveBaseline(request.caller_lat, request.caller_lng).catch(() => null);
-      const result = await dispatch(request);
-      setState(result);
-      setBaseline(await baselinePromise);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setState(null);
-    } finally {
-      setIsLoading(false);
+  useEffect(() => {
+    loadFleet();
+  }, [loadFleet]);
+
+  // Fleet capacity/map data should track live edits (diversion flips) and
+  // reflect a just-completed reservation without waiting for a manual
+  // refresh -- re-pull whenever a call reaches a state where the fleet
+  // could plausibly have changed.
+  useEffect(() => {
+    if (current?.status === "DISPATCHED" || current?.status === "COMPLETED") {
+      loadFleet();
+    }
+  }, [current?.status, loadFleet]);
+
+  // Auto-dispatch: the ONE place in this app a dispatch starts without a
+  // human clicking a button. Fires only when the mobile AI conversation
+  // (/call) has gathered enough patient info on its own and broadcasts
+  // `ready_for_dispatch` -- reuses the SAME startDispatch action and
+  // /dispatch/stream endpoint DispatchForm/handleUseVoiceTranscript use,
+  // so there is exactly one dispatch code path in this project.
+  const dispatchReadyPayload = useVoiceStore((s) => s.dispatchReadyPayload);
+  const clearDispatchReadyPayload = useVoiceStore((s) => s.clearDispatchReadyPayload);
+  const [autoDispatchedCallId, setAutoDispatchedCallId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!dispatchReadyPayload) return;
+    const payload = dispatchReadyPayload;
+    clearDispatchReadyPayload();
+    setAutoDispatchedCallId(payload.call_id);
+    startDispatch({
+      call_id: payload.call_id,
+      raw_transcript: payload.raw_transcript,
+      caller_lat: payload.caller_lat,
+      caller_lng: payload.caller_lng,
+    });
+  }, [dispatchReadyPayload, clearDispatchReadyPayload, startDispatch]);
+
+  function handleHospitalStatusChanged(updated: Hospital) {
+    const store = useDispatchStore.getState();
+    if (store.fleet) {
+      useDispatchStore.setState({
+        fleet: {
+          ...store.fleet,
+          hospitals: store.fleet.hospitals.map((h) => (h.id === updated.id ? updated : h)),
+        },
+      });
     }
   }
 
+  function handleOverrideTriage(priority: Priority, requiresAls: boolean, specialty: string | null) {
+    applyReview({
+      decision: "OVERRIDE",
+      triage_override: {
+        priority,
+        rule_ids: ["HUMAN_OVERRIDE"],
+        requires_als: requiresAls,
+        required_hospital_specialty: specialty,
+      },
+    });
+  }
+
+  function handleOverrideCandidate(candidateKey: string) {
+    if (!current) return;
+    const [ambulanceId, hospitalId] = candidateKey.split("|");
+    const candidate = current.candidates.find((c) => c.ambulance.id === ambulanceId && c.hospital.id === hospitalId);
+    if (!candidate) return;
+    applyReview({ decision: "OVERRIDE", selected_override: { ...candidate, rejected: false, rejection: null } });
+  }
+
+  // Voice transcript -> the SAME DispatchRequest shape DispatchForm already
+  // produces, submitted through the SAME startDispatch action -- voice is
+  // only a new way to fill in raw_transcript, never a new dispatch path.
+  // Only fires on explicit user click, never automatically when a
+  // transcript arrives.
+  function handleUseVoiceTranscript(transcript: string) {
+    startDispatch({
+      call_id: `call-${Date.now().toString(36)}`,
+      raw_transcript: transcript,
+      caller_lat: 42.3601,
+      caller_lng: -71.0589,
+    });
+  }
+
+  const isAwaitingReview = current?.status === "AWAITING_REVIEW";
+
   return (
     <div className="app">
-      <header className="app-header">
-        <h1>AEGIS — Protocol-Gated Emergency Dispatch</h1>
-        {state && <StatusBadge status={state.status} />}
-      </header>
+      <CommandHeader fleet={fleet} current={current} callsHandled={callsHandled} callsAutonomous={callsAutonomous} />
 
-      <DispatchForm onSubmit={handleDispatch} isLoading={isLoading} />
+      <div className="app-body">
+        {isAwaitingReview && current && (
+          <ReviewBanner
+            state={current}
+            onApprove={() => applyReview({ decision: "APPROVE" })}
+            onOverrideTriage={handleOverrideTriage}
+            onOverrideCandidate={handleOverrideCandidate}
+            isSubmitting={isRunning}
+          />
+        )}
 
-      {error && <div className="card card-error">{error}</div>}
+        <div className="grid-2">
+          <CityMap fleet={fleet} current={current} />
+          <AgentReasoningPanel timeline={timeline} current={current} />
+        </div>
 
-      {state && (
-        <>
-          {state.prearrival && <CoachingPanel prearrival={state.prearrival} />}
+        {autoDispatchedCallId && (
+          <div className="card" style={{ borderColor: "var(--success-border)", background: "var(--success-bg)" }}>
+            <strong>Auto-dispatch started</strong> — the AI phone conversation ({autoDispatchedCallId}) gathered
+            enough patient information on its own and submitted this call for dispatch automatically. No human
+            clicked "start."
+          </div>
+        )}
 
-          {state.review_reason && (
-            <div className="card card-warning">Escalated to human review: {state.review_reason}</div>
-          )}
-          {state.failure_reason && <div className="card card-error">Failed: {state.failure_reason}</div>}
-          {state.replan_count > 0 && (
-            <div className="card card-warning">
-              Replanned {state.replan_count}× — a selected hospital went to diversion mid-flight and AEGIS
-              automatically re-picked a valid one. No human touched it.
+        <div className="grid-2">
+          <IncomingCallCard onUseTranscript={handleUseVoiceTranscript} />
+          <PatientDetailsCard />
+        </div>
+
+        <ConversationTranscriptCard />
+
+        <DispatchForm onSubmit={startDispatch} isLoading={isRunning} />
+
+        {error && <div className="card card-error">{error}</div>}
+
+        {current && (
+          <>
+            <div className="status-row">
+              <StatusBadge status={current.status} />
+              {current.replan_count > 0 && (
+                <span className="pill pill-warning" title="The originally-picked ambulance or hospital stopped being valid (booked elsewhere, went on diversion, etc) after AEGIS chose it — it automatically found the next-best option instead of failing.">
+                  self-corrected {current.replan_count}× — first pick fell through, AEGIS re-routed automatically
+                </span>
+              )}
+              {current.failure_reason && <span className="pill pill-error">Couldn't complete: {current.failure_reason}</span>}
             </div>
-          )}
 
-          <div className="grid-2">
-            {state.incident && <IncidentCard incident={state.incident} />}
-            {state.triage && <TriageCard triage={state.triage} />}
-          </div>
+            <div className="grid-2">
+              <IncidentIntakePanel state={current} />
+              <HospitalCapacityPanel
+                fleet={fleet}
+                selectedHospitalId={current.selected?.hospital.id ?? null}
+                onStatusChanged={handleHospitalStatusChanged}
+              />
+            </div>
 
-          {state.incident && (
-            <SurvivalMeter timingLog={state.timing_log} chiefComplaint={state.incident.chief_complaint} />
-          )}
+            {current.prearrival && <CoachingPanel prearrival={current.prearrival} />}
+            {current.triage && <TriageCard triage={current.triage} />}
 
-          {baseline && state.selected && state.triage && (
-            <BaselineComparison baseline={baseline} selected={state.selected} triage={state.triage} />
-          )}
+            {current.incident && (
+              <SurvivalMeter timingLog={current.timing_log} chiefComplaint={current.incident.chief_complaint} />
+            )}
 
-          <CandidateList candidates={state.candidates} selected={state.selected} />
+            {baseline && current.selected && current.triage && (
+              <BaselineComparison baseline={baseline} selected={current.selected} triage={current.triage} />
+            )}
 
-          <div className="grid-2">
-            <ReservationCard reservation={state.reservation} />
-            <ComplexityPanel
-              complexityScore={state.complexity_score}
-              spawnedWorkers={state.spawned_workers}
-              reverifiedCandidates={state.reverified_candidates}
-            />
-          </div>
+            <CandidateList candidates={current.candidates} selected={current.selected} />
 
-          <TimingBreakdown timingLog={state.timing_log} />
-        </>
-      )}
+            <div className="grid-2">
+              <ReservationCard reservation={current.reservation} />
+              <ComplexityPanel
+                complexityScore={current.complexity_score}
+                spawnedWorkers={current.spawned_workers}
+                reverifiedCandidates={current.reverified_candidates}
+              />
+            </div>
 
-      <DiversionControl />
+            <TimingBreakdown timingLog={current.timing_log} />
+          </>
+        )}
+      </div>
     </div>
   );
 }
