@@ -1,10 +1,11 @@
 """Hospital + Ambulance data MCP microservice.
 
 Exposes get_eligible_ambulances / get_eligible_hospitals /
-get_hospital_capacity / get_nearest_ignoring_constraints as real MCP tools
-over streamable-http, so any MCP-speaking client (the core-orchestrator, an
-IDE, a future service) can attach to it purely by URL — no shared code
-required beyond the MCP protocol itself.
+get_hospital_capacity / set_hospital_status /
+get_relocation_recommendations / get_nearest_ignoring_constraints as real
+MCP tools over streamable-http, so any MCP-speaking client (the
+core-orchestrator, an IDE, a future service) can attach to it purely by URL
+— no shared code required beyond the MCP protocol itself.
 """
 
 from __future__ import annotations
@@ -49,6 +50,22 @@ def get_eligible_hospitals(
 def get_hospital_capacity(hospital_id: str) -> dict:
     """Return live bed count / status / specialties for one hospital."""
     return logic.hospital_capacity(hospital_id)
+
+
+@mcp.tool()
+def set_hospital_status(hospital_id: str, status: str) -> dict:
+    """Set a hospital to OPEN or DIVERSION and return its updated row."""
+    return logic.set_hospital_status(hospital_id, status)
+
+
+@mcp.tool()
+def get_relocation_recommendations(
+    max_recommendations: int = 3, max_relocation_km: float = 15.0
+) -> dict:
+    """Recommend advisory staging targets for idle ambulances based on
+    rolling seven-day demand-zone counts. Does not move or reserve units;
+    callers must revalidate a recommendation before acting on it."""
+    return logic.relocation_recommendations(max_recommendations, max_relocation_km)
 
 
 @mcp.tool()

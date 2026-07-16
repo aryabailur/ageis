@@ -16,6 +16,9 @@ import math
 from aegis_contracts.supabase_client import get_client
 
 
+_HOSPITAL_STATUSES = frozenset({"OPEN", "DIVERSION"})
+
+
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     r_km = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -34,6 +37,20 @@ def _fetch_ambulances(requires_als: bool = False) -> list[dict]:
 
 def _fetch_hospitals() -> list[dict]:
     return get_client().table("hospitals").select("*").eq("status", "OPEN").execute().data
+
+
+def _fetch_demand_zones() -> list[dict]:
+    return get_client().table("demand_zones").select("*").execute().data
+
+
+def _fetch_reserved_ambulance_ids() -> set[str]:
+    rows = get_client().table("reservations").select("ambulance_id").execute().data
+    return {row["ambulance_id"] for row in rows}
+
+
+def _fetch_idle_ambulances() -> list[dict]:
+    reserved_ids = _fetch_reserved_ambulance_ids()
+    return [ambulance for ambulance in _fetch_ambulances() if ambulance["id"] not in reserved_ids]
 
 
 def eligible_ambulances(
@@ -69,6 +86,93 @@ def hospital_capacity(hospital_id: str) -> dict:
     if not rows:
         raise ValueError(f"Unknown hospital_id: {hospital_id}")
     return rows[0]
+
+
+def set_hospital_status(hospital_id: str, status: str) -> dict:
+    if status not in _HOSPITAL_STATUSES:
+        allowed = ", ".join(sorted(_HOSPITAL_STATUSES))
+        raise ValueError(f"Invalid hospital status: {status!r}. Expected one of: {allowed}")
+
+    rows = (
+        get_client()
+        .table("hospitals")
+        .update({"status": status})
+        .eq("id", hospital_id)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise ValueError(f"Unknown hospital_id: {hospital_id}")
+    return rows[0]
+
+
+def relocation_recommendations(
+    max_recommendations: int = 3, max_relocation_km: float = 15.0
+) -> dict:
+    """Recommend where idle units should stage based on seven-day demand.
+
+    This is advisory only: it never changes ambulance coordinates or status.
+    Reservations are checked separately because an AVAILABLE unit can already
+    be committed to an in-flight dispatch. The two reads are not atomic, so a
+    caller must revalidate a recommendation before acting on it.
+    """
+    if max_recommendations <= 0:
+        raise ValueError("max_recommendations must be greater than 0")
+    if max_relocation_km <= 0:
+        raise ValueError("max_relocation_km must be greater than 0")
+
+    remaining_ambulances = list(_fetch_idle_ambulances())
+    ranked_zones = sorted(
+        _fetch_demand_zones(),
+        key=lambda zone: (-zone["historical_calls_7d"], zone["id"]),
+    )
+    recommendations = []
+
+    for zone in ranked_zones:
+        if len(recommendations) >= max_recommendations or not remaining_ambulances:
+            break
+        if zone["historical_calls_7d"] <= 0:
+            continue
+
+        candidates = []
+        for ambulance in remaining_ambulances:
+            distance_km = haversine_km(
+                ambulance["lat"],
+                ambulance["lng"],
+                zone["lat"],
+                zone["lng"],
+            )
+            if distance_km <= max_relocation_km:
+                candidates.append((distance_km, ambulance["id"], ambulance))
+
+        if not candidates:
+            continue
+
+        distance_km, _, ambulance = min(candidates, key=lambda item: (item[0], item[1]))
+        remaining_ambulances.remove(ambulance)
+        recommendations.append(
+            {
+                "ambulance_id": ambulance["id"],
+                "capability": ambulance["capability"],
+                "current_lat": ambulance["lat"],
+                "current_lng": ambulance["lng"],
+                "target_zone_id": zone["id"],
+                "target_zone_name": zone["name"],
+                "target_lat": zone["lat"],
+                "target_lng": zone["lng"],
+                "relocation_distance_km": round(distance_km, 3),
+                "historical_calls_7d": zone["historical_calls_7d"],
+                "predicted_calls_next_hour": round(zone["historical_calls_7d"] / 168.0, 3),
+            }
+        )
+
+    return {
+        "recommendations": recommendations,
+        "advisory_only": True,
+        "requires_revalidation": True,
+        "data_source": "supabase_demand_zones",
+        "forecast_method": "historical_calls_7d / 168",
+    }
 
 
 def nearest_ignoring_constraints(lat: float, lng: float) -> dict:

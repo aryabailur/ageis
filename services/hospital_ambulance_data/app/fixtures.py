@@ -46,3 +46,30 @@ HOSPITALS: list[dict] = [
         "status": "OPEN",
     },
 ]
+
+
+# Synthetic rolling seven-day aggregates for the relocation demo. In a
+# production deployment these rows would be refreshed from incident history.
+DEMAND_ZONES: list[dict] = [
+    {
+        "id": "zone-downtown",
+        "name": "Downtown Boston",
+        "lat": 42.3601,
+        "lng": -71.0589,
+        "historical_calls_7d": 84,
+    },
+    {
+        "id": "zone-back-bay",
+        "name": "Back Bay",
+        "lat": 42.3493,
+        "lng": -71.0810,
+        "historical_calls_7d": 56,
+    },
+    {
+        "id": "zone-cambridge",
+        "name": "Cambridge",
+        "lat": 42.3736,
+        "lng": -71.1097,
+        "historical_calls_7d": 35,
+    },
+]

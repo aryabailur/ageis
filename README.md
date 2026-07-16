@@ -24,8 +24,8 @@ service in this repo:
 
 ```
 services/
-  hospital_ambulance_data/   MCP microservice: ambulances + hospitals, backed by Supabase
-    migrations/001_schema.sql   Run once in the Supabase SQL editor
+  hospital_ambulance_data/   MCP microservice: fleet, hospitals, and demand, backed by Supabase
+    migrations/                Apply SQL files in numeric order in the Supabase SQL editor
     seed.py                     Loads demo data into the tables
   routing/                   MCP microservice: Mapbox Directions (traffic-aware) -> Haversine fallback
   core_orchestrator/         LangGraph workflow + FastAPI /dispatch endpoint; reservations in Supabase
@@ -82,7 +82,7 @@ a breaking change):
 
 `hospital_ambulance_data` and `core_orchestrator`'s reservations now read
 and write a real Supabase Postgres database instead of in-memory Python
-data — see `services/hospital_ambulance_data/migrations/001_schema.sql`
+data — see `services/hospital_ambulance_data/migrations/`
 for the schema and `services/hospital_ambulance_data/seed.py` for demo
 data. `routing` calls the Mapbox Directions API (`driving-traffic`
 profile) for real traffic-aware ETAs, falling back to the labeled
@@ -90,17 +90,46 @@ Haversine estimate if `MAPBOX_API_KEY` is unset or the call fails —
 exactly the same fallback ladder shape as before, just with a real rung
 on top now instead of a stub.
 
+The data service owns hospital diversion writes through its
+`set_hospital_status` MCP tool. It accepts only `OPEN` or `DIVERSION`,
+returns the updated hospital row, and diverted hospitals are excluded by
+`get_eligible_hospitals` at the database query.
+
+It also exposes `get_relocation_recommendations`, an advisory staging
+planner for currently available, unreserved ambulances. It ranks seeded
+rolling seven-day demand-zone aggregates, forecasts an hourly rate as
+`historical_calls_7d / 168`, and assigns the nearest idle unit without
+changing ambulance coordinates, status, or reservations. The included
+zone counts are synthetic demo data; production deployments should
+refresh `demand_zones` from real incident history. Availability and
+reservations are read separately, so every recommendation is marked for
+revalidation before execution.
+
+**Person A integration note:** replace the direct Supabase update in
+`core_orchestrator/app/main.py`'s existing
+`POST /admin/hospitals/{hospital_id}/status` handler with
+`registry.get("hospital_ambulance_data")` plus
+`call_tool(service.base_url, "set_hospital_status", {"hospital_id":
+hospital_id, "status": request.status})`, matching the `/baseline` proxy
+immediately above it. Preserve the endpoint's existing unknown-hospital
+`404`: `call_tool` wraps MCP tool failures in `RuntimeError`, so a generic
+unreachable-service handler would otherwise turn that case into `502`.
+The `core_orchestrator` entry in `services.yaml` also still lists only
+`dispatch`; reconcile that list with its current batch, baseline, and
+admin endpoints when updating the orchestrator.
+
 **One-time setup, before running anything:**
 
 1. Copy `.env.example` to `.env` at the repo root and fill in
    `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `MAPBOX_API_KEY`.
-2. Run `services/hospital_ambulance_data/migrations/001_schema.sql` in
-   your Supabase project's SQL editor.
+2. Run the SQL files in `services/hospital_ambulance_data/migrations/`
+   in numeric order in your Supabase project's SQL editor.
 3. `cd services/hospital_ambulance_data && py seed.py` to load demo data.
 
-Tests that need Supabase (`hospital_ambulance_data`'s eligibility tests,
-`core_orchestrator`'s clean-cardiac-path test) skip cleanly with a reason
-if `.env` isn't configured, rather than failing the suite.
+Tests that need Supabase (data eligibility, status mutation, relocation,
+reservation contention, and the orchestrator's clean cardiac path) skip
+cleanly with a reason if `.env` isn't configured, rather than failing the
+suite.
 
 ## Running it
 

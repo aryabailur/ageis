@@ -18,6 +18,8 @@ services:
       - get_eligible_ambulances
       - get_eligible_hospitals
       - get_hospital_capacity
+      - set_hospital_status
+      - get_relocation_recommendations
       - get_nearest_ignoring_constraints
 
   - name: routing
