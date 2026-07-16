@@ -6,6 +6,7 @@ import { ambulanceDisplayName, hospitalDisplayName, specialtyLabel } from "../gl
  * what a constraint-blind dispatcher would have picked (deliberately wrong
  * on the seeded demo data -- BLS unit, non-cardiac hospital) vs what AEGIS
  * actually locked, with the specific constraint each naive pick violates.
+ * Rendered as a compact two-column comparison, not a table.
  */
 export function BaselineComparison({
   baseline,
@@ -22,52 +23,55 @@ export function BaselineComparison({
     !baseline.hospital.specialties.includes(triage.required_hospital_specialty);
 
   return (
-    <div className="card">
-      <h2>What a simpler dispatcher would have gotten wrong</h2>
+    <div className="card panel-baseline">
+      <div className="panel-header">
+        <h2>Naive dispatch vs. AEGIS</h2>
+      </div>
       <p className="muted panel-intro">
-        "Just send the closest unit" is how naive dispatch works. Here's what that would have picked
-        for this call, versus what AEGIS actually locked in.
+        "Just send the closest unit" is how naive dispatch works. Here's what that would have picked for this
+        call, versus what AEGIS actually locked in.
       </p>
-      <table className="baseline-table">
-        <thead>
-          <tr>
-            <th></th>
-            <th>Closest-only (naive)</th>
-            <th>AEGIS</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className="baseline-rowlabel">Ambulance</td>
-            <td className={ambulanceWrong ? "baseline-wrong" : ""}>
+      <div className="baseline-compare-grid">
+        <div className="baseline-col baseline-col-naive">
+          <span className="baseline-col-title">Closest-only (naive)</span>
+          <div className="baseline-row">
+            <span className="baseline-row-label">Ambulance</span>
+            <span className={ambulanceWrong ? "baseline-wrong" : ""}>
               {ambulanceDisplayName(baseline.ambulance.id)} ({baseline.ambulance.capability})
-              {ambulanceWrong && <div className="baseline-why">✕ no paramedic crew — wrong level of care</div>}
-            </td>
-            <td className="baseline-right">
+            </span>
+            {ambulanceWrong && <span className="baseline-why">✕ no paramedic crew — wrong level of care</span>}
+          </div>
+          <div className="baseline-row">
+            <span className="baseline-row-label">Hospital</span>
+            <span className={hospitalWrong ? "baseline-wrong" : ""}>{hospitalDisplayName(baseline.hospital.id)}</span>
+            {hospitalWrong && (
+              <span className="baseline-why">
+                ✕ can't treat {specialtyLabel(triage.required_hospital_specialty).toLowerCase()} cases
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="baseline-col baseline-col-aegis">
+          <span className="baseline-col-title">AEGIS</span>
+          <div className="baseline-row">
+            <span className="baseline-row-label">Ambulance</span>
+            <span>
               {ambulanceDisplayName(selected.ambulance.id)} ({selected.ambulance.capability})
-              <div className="baseline-why baseline-why-ok">✓ has the paramedic crew this case needs</div>
-            </td>
-          </tr>
-          <tr>
-            <td className="baseline-rowlabel">Hospital</td>
-            <td className={hospitalWrong ? "baseline-wrong" : ""}>
-              {hospitalDisplayName(baseline.hospital.id)}
-              {hospitalWrong && (
-                <div className="baseline-why">✕ can't treat {specialtyLabel(triage.required_hospital_specialty).toLowerCase()} cases</div>
-              )}
-            </td>
-            <td className="baseline-right">
-              {hospitalDisplayName(selected.hospital.id)}
-              <div className="baseline-why baseline-why-ok">
-                ✓ {selected.hospital.bed_count} beds open, treats {specialtyLabel(triage.required_hospital_specialty).toLowerCase()}
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="muted">
-        Naive pick source: <code>{baseline.data_source}</code> — literally the nearest unit and hospital,
-        with no check for capability, capacity, or whether they're even open.
+            </span>
+            <span className="baseline-why baseline-why-ok">✓ has the paramedic crew this case needs</span>
+          </div>
+          <div className="baseline-row">
+            <span className="baseline-row-label">Hospital</span>
+            <span>{hospitalDisplayName(selected.hospital.id)}</span>
+            <span className="baseline-why baseline-why-ok">
+              ✓ {selected.hospital.bed_count} beds open, treats {specialtyLabel(triage.required_hospital_specialty).toLowerCase()}
+            </span>
+          </div>
+        </div>
+      </div>
+      <p className="muted field-inline-note-small">
+        Naive pick source: <code>{baseline.data_source}</code> — the nearest unit and hospital, with no check
+        for capability, capacity, or whether they're even open.
       </p>
     </div>
   );

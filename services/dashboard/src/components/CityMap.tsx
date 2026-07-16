@@ -1,40 +1,41 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { GoogleMap, OverlayView, Polyline, useJsApiLoader } from "@react-google-maps/api";
 import type { Ambulance, DispatchState, FleetSnapshot, Hospital } from "../types";
+import { useDeviceLocation } from "../hooks/useDeviceLocation";
+import { useNearbyHospitals } from "../hooks/useNearbyHospitals";
 
 interface Props {
   fleet: FleetSnapshot | null;
   current: DispatchState | null;
 }
 
-interface Bounds {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-}
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
-const PADDING_PCT = 12;
+const FALLBACK_CENTER = { lat: 42.36, lng: -71.06 };
 
-function computeBounds(points: Array<{ lat: number; lng: number }>): Bounds {
-  const lats = points.map((p) => p.lat);
-  const lngs = points.map((p) => p.lng);
-  const minLat = Math.min(...lats);
-  const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs);
-  const maxLng = Math.max(...lngs);
-  // Guard against a degenerate (near-zero) span collapsing every point onto
-  // one pixel when only one location is known.
-  const latSpan = maxLat - minLat || 0.01;
-  const lngSpan = maxLng - minLng || 0.01;
-  return { minLat: minLat - latSpan * 0.15, maxLat: maxLat + latSpan * 0.15, minLng: minLng - lngSpan * 0.15, maxLng: maxLng + lngSpan * 0.15 };
-}
+const MAP_CONTAINER_STYLE = { width: "100%", height: "100%" };
 
-function project(lat: number, lng: number, bounds: Bounds): { x: number; y: number } {
-  const xPct = ((lng - bounds.minLng) / (bounds.maxLng - bounds.minLng)) * (100 - 2 * PADDING_PCT) + PADDING_PCT;
-  // Screen y grows downward; latitude grows northward -- invert.
-  const yPct = (1 - (lat - bounds.minLat) / (bounds.maxLat - bounds.minLat)) * (100 - 2 * PADDING_PCT) + PADDING_PCT;
-  return { x: xPct, y: yPct };
-}
+// Flat dark theme to match the command-center aesthetic instead of Google's
+// default light basemap -- roughly mirrors the old Mapbox dark-v11 look.
+const DARK_MAP_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: "geometry", stylers: [{ color: "#1a1d23" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#1a1d23" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#6b7280" }] },
+  { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#374151" }] },
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a2f38" }] },
+  { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#5b6472" }] },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#374151" }] },
+  { featureType: "transit", stylers: [{ visibility: "off" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#111418" }] },
+];
+
+const MAP_OPTIONS: google.maps.MapOptions = {
+  styles: DARK_MAP_STYLE,
+  disableDefaultUI: true,
+  zoomControl: true,
+  clickableIcons: false,
+};
 
 function hospitalColorClass(status: string): string {
   return status === "OPEN" ? "map-marker-hospital-open" : "map-marker-hospital-diversion";
@@ -53,128 +54,226 @@ function ambulanceProgress(state: DispatchState): number {
   return dispatchedOrLater ? 1 : 0;
 }
 
+function computeBounds(points: Array<{ lat: number; lng: number }>): google.maps.LatLngBoundsLiteral | null {
+  if (points.length === 0) return null;
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  return {
+    south: Math.min(...lats),
+    north: Math.max(...lats),
+    west: Math.min(...lngs),
+    east: Math.max(...lngs),
+  };
+}
+
+function Pin({ lat, lng, className, title }: { lat: number; lng: number; className: string; title?: string }) {
+  return (
+    <OverlayView position={{ lat, lng }} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+      <div className={`map-pin ${className}`} title={title} style={{ transform: "translate(-50%, -50%)" }} />
+    </OverlayView>
+  );
+}
+
 export function CityMap({ fleet, current }: Props) {
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: "aegis-google-maps",
+    googleMapsApiKey: GOOGLE_MAPS_KEY ?? "",
+  });
+
+  const device = useDeviceLocation();
+  const { hospitals: nearbyHospitals } = useNearbyHospitals(device.lat, device.lng, GOOGLE_MAPS_KEY);
+
   const incidentLat = current?.caller_lat ?? null;
   const incidentLng = current?.caller_lng ?? null;
   const ambulances: Ambulance[] = fleet?.ambulances ?? [];
   const hospitals: Hospital[] = fleet?.hospitals ?? [];
 
-  const bounds = useMemo(() => {
-    const points: Array<{ lat: number; lng: number }> = [];
-    ambulances.forEach((a) => points.push({ lat: a.lat, lng: a.lng }));
-    hospitals.forEach((h) => points.push({ lat: h.lat, lng: h.lng }));
-    if (incidentLat !== null && incidentLng !== null) points.push({ lat: incidentLat, lng: incidentLng });
-    if (points.length === 0) return computeBounds([{ lat: 42.36, lng: -71.06 }]);
-    return computeBounds(points);
-  }, [ambulances, hospitals, incidentLat, incidentLng]);
+  const points = useMemo(() => {
+    const pts: Array<{ lat: number; lng: number }> = [];
+    ambulances.forEach((a) => pts.push({ lat: a.lat, lng: a.lng }));
+    hospitals.forEach((h) => pts.push({ lat: h.lat, lng: h.lng }));
+    if (incidentLat !== null && incidentLng !== null) pts.push({ lat: incidentLat, lng: incidentLng });
+    if (device.lat !== null && device.lng !== null) pts.push({ lat: device.lat, lng: device.lng });
+    nearbyHospitals.forEach((h) => pts.push({ lat: h.lat, lng: h.lng }));
+    return pts;
+  }, [ambulances, hospitals, incidentLat, incidentLng, device.lat, device.lng, nearbyHospitals]);
+
+  const bounds = useMemo(() => computeBounds(points), [points]);
+
+  useEffect(() => {
+    if (mapRef.current && bounds) {
+      mapRef.current.fitBounds(bounds, 64);
+    }
+  }, [bounds]);
 
   const selected = current?.selected ?? null;
   const routeFellBack = selected?.route_data_source && selected.route_data_source !== "mcp:routing";
 
+  const routePath = useMemo(() => {
+    if (!selected || incidentLat === null || incidentLng === null) return null;
+    return [
+      { lat: selected.ambulance.lat, lng: selected.ambulance.lng },
+      { lat: incidentLat, lng: incidentLng },
+    ];
+  }, [selected, incidentLat, incidentLng]);
+
+  const progress = current ? ambulanceProgress(current) : 0;
+  const routeDot =
+    selected && incidentLat !== null && incidentLng !== null
+      ? {
+          lat: selected.ambulance.lat + (incidentLat - selected.ambulance.lat) * progress,
+          lng: selected.ambulance.lng + (incidentLng - selected.ambulance.lng) * progress,
+        }
+      : null;
+
+  const [center] = useState(() => points[0] ?? FALLBACK_CENTER);
+
+  // Center on the device's real location the first time it arrives --
+  // after that, fitBounds (above) takes over as more points appear, so
+  // this only needs to fire once rather than fighting the user's pan/zoom.
+  const hasCenteredOnDeviceRef = useRef(false);
+  useEffect(() => {
+    if (hasCenteredOnDeviceRef.current) return;
+    if (device.lat === null || device.lng === null || !mapRef.current) return;
+    hasCenteredOnDeviceRef.current = true;
+    mapRef.current.panTo({ lat: device.lat, lng: device.lng });
+    mapRef.current.setZoom(13);
+  }, [device.lat, device.lng]);
+
   return (
-    <div className="card map-card">
-      <div className="map-card-header">
-        <h2>Live map</h2>
-        {routeFellBack && <span className="map-delay-note">● routing degraded — using cached estimate</span>}
-      </div>
-      <div className="map-legend">
-        <span className="map-legend-item"><span className="map-legend-swatch map-legend-hospital-open" />Hospital, open</span>
-        <span className="map-legend-item"><span className="map-legend-swatch map-legend-hospital-diversion" />Hospital, diversion</span>
-        <span className="map-legend-item"><span className="map-legend-swatch map-legend-unit" />Ambulance</span>
-        <span className="map-legend-item"><span className="map-legend-swatch map-legend-unit-selected" />Assigned unit</span>
-        <span className="map-legend-item"><span className="map-legend-swatch map-legend-incident" />Patient</span>
-      </div>
-      <div className="map-surface">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="map-grid">
-          {[20, 40, 60, 80].map((v) => (
-            <line key={`v${v}`} x1={v} y1={0} x2={v} y2={100} className="map-gridline" />
-          ))}
-          {[20, 40, 60, 80].map((v) => (
-            <line key={`h${v}`} x1={0} y1={v} x2={100} y2={v} className="map-gridline" />
+    <div className="map-shell">
+      {!GOOGLE_MAPS_KEY ? (
+        <div className="map-token-missing">
+          Set <code>VITE_GOOGLE_MAPS_KEY</code> in .env.local to enable the live map.
+        </div>
+      ) : loadError ? (
+        <div className="map-token-missing">Google Maps failed to load — check the API key and enabled APIs.</div>
+      ) : !isLoaded ? (
+        <div className="map-token-missing">Loading map…</div>
+      ) : (
+        <GoogleMap
+          mapContainerStyle={MAP_CONTAINER_STYLE}
+          center={center}
+          zoom={11}
+          options={MAP_OPTIONS}
+          onLoad={(map) => {
+            mapRef.current = map;
+            if (bounds) map.fitBounds(bounds, 64);
+          }}
+        >
+          {routePath && (
+            <Polyline
+              path={routePath}
+              options={{
+                strokeColor: "#5b8def",
+                strokeOpacity: 0.8,
+                strokeWeight: 2.5,
+                icons: [{ icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 2 }, offset: "0", repeat: "10px" }],
+              }}
+            />
+          )}
+
+          {hospitals.map((h) => (
+            <Pin key={h.id} lat={h.lat} lng={h.lng} className={`map-pin-hospital ${hospitalColorClass(h.status)}`} title={h.id} />
           ))}
 
-          {hospitals.map((h) => {
-            const p = project(h.lat, h.lng, bounds);
-            return (
-              <g key={h.id} transform={`translate(${p.x} ${p.y})`}>
-                <rect x={-2.2} y={-2.2} width={4.4} height={4.4} rx={1} className={`map-marker ${hospitalColorClass(h.status)}`} />
-                <text x={0} y={-3.2} className="map-label map-label-halo" textAnchor="middle">
-                  {h.id.replace("hosp-", "")}
-                </text>
-              </g>
-            );
-          })}
+          {nearbyHospitals.map((h) => (
+            <Pin key={h.id} lat={h.lat} lng={h.lng} className="map-pin-nearby-hospital" title={h.name} />
+          ))}
+
+          {device.lat !== null && device.lng !== null && (
+            <Pin lat={device.lat} lng={device.lng} className="map-pin-device" title="Your location" />
+          )}
 
           {ambulances.map((a) => {
-            const p = project(a.lat, a.lng, bounds);
             const isSelectedUnit = selected?.ambulance.id === a.id;
             return (
-              <g key={a.id} transform={`translate(${p.x} ${p.y})`}>
-                <rect
-                  x={-1.8}
-                  y={-1.8}
-                  width={3.6}
-                  height={3.6}
-                  rx={1}
-                  className={`map-marker ${isSelectedUnit ? "map-marker-unit-selected" : "map-marker-unit"}`}
-                />
-                <text x={0} y={4.6} className="map-label map-label-halo" textAnchor="middle">
-                  {a.id.replace("unit-", "U")}
-                </text>
-              </g>
+              <Pin
+                key={a.id}
+                lat={a.lat}
+                lng={a.lng}
+                className={`map-pin-unit ${isSelectedUnit ? "map-marker-unit-selected" : "map-marker-unit"}`}
+                title={a.id}
+              />
             );
           })}
 
           {incidentLat !== null && incidentLng !== null && (
-            <g transform={`translate(${project(incidentLat, incidentLng, bounds).x} ${project(incidentLat, incidentLng, bounds).y})`}>
-              <circle r={2.4} className="map-marker-incident" />
-              <circle r={2.4} className="map-marker-incident-pulse" />
-              <text x={0} y={5.8} className="map-label map-label-halo" textAnchor="middle">
-                incident
-              </text>
-            </g>
+            <Pin lat={incidentLat} lng={incidentLng} className="map-pin-incident map-marker-incident" title="patient" />
           )}
 
-          {selected && incidentLat !== null && incidentLng !== null && (
-            <RouteLine
-              from={project(selected.ambulance.lat, selected.ambulance.lng, bounds)}
-              to={project(incidentLat, incidentLng, bounds)}
-              progress={current ? ambulanceProgress(current) : 0}
-            />
-          )}
-        </svg>
+          {routeDot && <Pin lat={routeDot.lat} lng={routeDot.lng} className="map-pin-route-dot" />}
+        </GoogleMap>
+      )}
+
+      <div className="map-legend map-floating">
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-hospital-open" />Open</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-hospital-diversion" />Diversion</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-unit" />Ambulance</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-unit-selected" />Assigned</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-incident" />Patient</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-nearby-hospital" />Nearby hospital</span>
+        <span className="map-legend-item"><span className="map-legend-swatch map-legend-device" />You</span>
       </div>
-      <div className="map-footer">
-        {selected ? (
-          <>
-            Unit {selected.ambulance.id.replace("unit-", "")} → scene
-            {selected.ambulance_eta_minutes !== null && (
-              <span className="map-eta"> ETA {selected.ambulance_eta_minutes.toFixed(1)} min</span>
-            )}
-          </>
-        ) : (
-          <span className="muted">No unit selected yet</span>
-        )}
+
+      {routeFellBack && (
+        <div className="map-floating map-degraded-note">● routing degraded — using cached estimate</div>
+      )}
+
+      {device.status === "denied" && (
+        <div className="map-floating map-degraded-note map-location-note">
+          ● location access denied — enable it in browser settings to see your position
+        </div>
+      )}
+      {device.status === "unsupported" && (
+        <div className="map-floating map-degraded-note map-location-note">● geolocation not supported by this browser</div>
+      )}
+
+      {nearbyHospitals.length > 0 && (
+        <div className="map-floating map-nearby-panel">
+          <span className="map-nearby-panel-title">Nearby hospitals ({nearbyHospitals.length})</span>
+          <ul className="map-nearby-list">
+            {nearbyHospitals.slice(0, 5).map((h) => (
+              <li key={h.id} className="map-nearby-item">
+                <span className="map-nearby-item-name">{h.name}</span>
+                {h.openNow != null && (
+                  <span className={`map-nearby-item-status ${h.openNow ? "map-nearby-item-open" : "map-nearby-item-closed"}`}>
+                    {h.openNow ? "Open" : "Closed"}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="map-stat-rail">
+        <div className="map-stat-card">
+          <span className="map-stat-label">ETA</span>
+          <span className="map-stat-value">
+            {selected?.ambulance_eta_minutes != null ? `${selected.ambulance_eta_minutes.toFixed(1)}m` : "—"}
+          </span>
+        </div>
+        <div className="map-stat-card">
+          <span className="map-stat-label">Hospital ETA</span>
+          <span className="map-stat-value">
+            {selected?.hospital_eta_minutes != null ? `${selected.hospital_eta_minutes.toFixed(1)}m` : "—"}
+          </span>
+        </div>
+        <div className="map-stat-card">
+          <span className="map-stat-label">Hospital</span>
+          <span className="map-stat-value map-stat-value-text">
+            {selected ? selected.hospital.id.replace(/^hosp-/, "").replace(/-/g, " ") : "—"}
+          </span>
+        </div>
+        <div className="map-stat-card">
+          <span className="map-stat-label">Ambulance</span>
+          <span className="map-stat-value map-stat-value-text">
+            {selected ? selected.ambulance.id.replace("unit-", "Unit ") : "Unassigned"}
+          </span>
+        </div>
       </div>
     </div>
-  );
-}
-
-function RouteLine({
-  from,
-  to,
-  progress,
-}: {
-  from: { x: number; y: number };
-  to: { x: number; y: number };
-  progress: number;
-}) {
-  const cx = from.x + (to.x - from.x) * progress;
-  const cy = from.y + (to.y - from.y) * progress;
-  return (
-    <>
-      <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} className="map-route-line" />
-      <circle cx={cx} cy={cy} r={1.4} className="map-route-progress-dot" />
-    </>
   );
 }

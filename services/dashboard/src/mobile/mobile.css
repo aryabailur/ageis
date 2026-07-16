@@ -1,13 +1,14 @@
 /* Scoped styles for the mobile AI emergency voice assistant (/call).
    Uses the same design tokens as theme.css but never touches
-   index.css's existing dashboard styles. */
+   index.css's existing dashboard styles. Flat fills, hairline borders,
+   no glow/gradients -- same console aesthetic as the desktop dashboard. */
 
 .mobile-root {
   min-height: 100vh;
   min-height: 100dvh;
-  background: radial-gradient(circle at 50% 0%, var(--bg-raised), var(--bg) 70%);
+  background: var(--bg-primary);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   display: flex;
   flex-direction: column;
 }
@@ -32,23 +33,22 @@
 }
 
 .mobile-logo {
-  font-size: 40px;
-  color: var(--accent);
-  width: 84px;
-  height: 84px;
-  border-radius: 24px;
+  font-size: 36px;
+  color: var(--accent-primary);
+  width: 76px;
+  height: 76px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 40px rgba(124, 158, 255, 0.25);
 }
 
 .mobile-home-title {
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
   margin: 4px 0 0;
 }
 
@@ -75,26 +75,25 @@
 .mobile-start-btn {
   width: 100%;
   max-width: 340px;
-  padding: 22px;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  border-radius: 999px;
-  border: none;
-  background: linear-gradient(135deg, var(--error), #c93049);
+  padding: 20px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--status-critical);
+  background: var(--status-critical);
   color: #fff;
-  box-shadow: 0 8px 30px rgba(240, 87, 107, 0.4);
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 
 .mobile-start-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.98);
 }
 
 .mobile-start-btn:disabled {
   background: var(--surface-2);
-  box-shadow: none;
+  border-color: var(--border-strong);
   cursor: not-allowed;
   color: var(--text-faint);
 }
@@ -122,31 +121,29 @@
 }
 
 .mobile-avatar {
-  width: 88px;
-  height: 88px;
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
   background: var(--surface);
   border: 2px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  color: var(--accent);
-  transition: box-shadow 0.3s ease;
+  font-size: 28px;
+  color: var(--accent-primary);
+  transition: border-color var(--dur-base) var(--ease-out);
 }
 
 .mobile-avatar-listening {
-  box-shadow: 0 0 0 8px rgba(124, 158, 255, 0.15);
+  border-color: var(--accent-primary);
 }
 
 .mobile-avatar-speaking {
-  box-shadow: 0 0 0 10px rgba(52, 211, 153, 0.18);
-  border-color: var(--success);
+  border-color: var(--status-success);
 }
 
 .mobile-avatar-thinking {
-  box-shadow: 0 0 0 8px rgba(242, 184, 75, 0.15);
-  border-color: var(--warning);
+  border-color: var(--status-warning);
 }
 
 .mobile-call-status {
@@ -156,6 +153,7 @@
 }
 
 .mobile-call-timer {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   color: var(--text-faint);
@@ -164,7 +162,7 @@
 .mobile-call-error {
   margin: 12px auto 0;
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--error-bg);
   border: 1px solid var(--error-border);
   color: var(--error);
@@ -185,10 +183,10 @@
 }
 
 .mobile-waveform-bar {
-  width: 4px;
+  width: 3px;
   min-height: 6px;
-  border-radius: 3px;
-  background: var(--accent);
+  border-radius: 1px;
+  background: var(--accent-primary);
   transition: height 0.08s ease-out;
 }
 
@@ -213,7 +211,7 @@
 .mobile-bubble {
   max-width: 82%;
   padding: 10px 14px;
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   font-size: 14px;
   line-height: 1.4;
   word-break: break-word;
@@ -223,14 +221,14 @@
   align-self: flex-start;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: var(--radius-sm);
 }
 
 .mobile-bubble-patient {
   align-self: flex-end;
-  background: var(--accent);
-  color: #0a0e17;
-  border-bottom-right-radius: 4px;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .mobile-bubble-interim {
@@ -249,7 +247,7 @@
 
 .mobile-control-btn {
   padding: 14px 18px;
-  border-radius: 999px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
@@ -265,14 +263,13 @@
 }
 
 .mobile-end-btn {
-  width: 68px;
-  height: 68px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  border: none;
-  background: var(--error);
+  border: 1px solid var(--status-critical);
+  background: var(--status-critical);
   color: #fff;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 6px 24px rgba(240, 87, 107, 0.45);
 }

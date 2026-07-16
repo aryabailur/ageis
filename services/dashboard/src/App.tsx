@@ -4,13 +4,13 @@ import { useVoiceStore } from "./store/voiceStore";
 import type { Hospital, Priority } from "./types";
 import { CommandHeader } from "./components/CommandHeader";
 import { CityMap } from "./components/CityMap";
+import { DecisionTimeline } from "./components/DecisionTimeline";
 import { AgentReasoningPanel } from "./components/AgentReasoningPanel";
 import { ReviewBanner } from "./components/ReviewBanner";
 import { IncidentIntakePanel } from "./components/IncidentIntakePanel";
 import { HospitalCapacityPanel } from "./components/HospitalCapacityPanel";
 import { DispatchForm } from "./components/DispatchForm";
-import { IncomingCallCard } from "./components/IncomingCallCard";
-import { PatientDetailsCard } from "./components/PatientDetailsCard";
+import { EmergencySummaryCard } from "./components/EmergencySummaryCard";
 import { ConversationTranscriptCard } from "./components/ConversationTranscriptCard";
 import { StatusBadge } from "./components/StatusBadge";
 import { TriageCard } from "./components/TriageCard";
@@ -126,86 +126,103 @@ export default function App() {
       <CommandHeader fleet={fleet} current={current} callsHandled={callsHandled} callsAutonomous={callsAutonomous} />
 
       <div className="app-body">
-        {isAwaitingReview && current && (
-          <ReviewBanner
-            state={current}
-            onApprove={() => applyReview({ decision: "APPROVE" })}
-            onOverrideTriage={handleOverrideTriage}
-            onOverrideCandidate={handleOverrideCandidate}
-            isSubmitting={isRunning}
-          />
-        )}
-
-        <div className="grid-2">
-          <CityMap fleet={fleet} current={current} />
-          <AgentReasoningPanel timeline={timeline} current={current} />
+        {/* --- LEFT: Emergency Summary --- */}
+        <div className="app-left">
+          <EmergencySummaryCard onUseTranscript={handleUseVoiceTranscript} />
+          <DispatchForm onSubmit={startDispatch} isLoading={isRunning} />
         </div>
 
-        {autoDispatchedCallId && (
-          <div className="card" style={{ borderColor: "var(--success-border)", background: "var(--success-bg)" }}>
-            <strong>Auto-dispatch started</strong> — the AI phone conversation ({autoDispatchedCallId}) gathered
-            enough patient information on its own and submitted this call for dispatch automatically. No human
-            clicked "start."
+        {/* --- CENTER: Live map + decision timeline + call detail --- */}
+        <div className="app-center">
+          {isAwaitingReview && current && (
+            <ReviewBanner
+              state={current}
+              onApprove={() => applyReview({ decision: "APPROVE" })}
+              onOverrideTriage={handleOverrideTriage}
+              onOverrideCandidate={handleOverrideCandidate}
+              isSubmitting={isRunning}
+            />
+          )}
+
+          {autoDispatchedCallId && (
+            <div className="card" style={{ borderColor: "var(--success-border)", background: "var(--success-bg)" }}>
+              <strong>Auto-dispatch started</strong> — the AI phone conversation ({autoDispatchedCallId}) gathered
+              enough patient information on its own and submitted this call for dispatch automatically. No human
+              clicked "start."
+            </div>
+          )}
+
+          {error && <div className="card card-error">{error}</div>}
+
+          <div className="map-outer">
+            <CityMap fleet={fleet} current={current} />
           </div>
-        )}
 
-        <div className="grid-2">
-          <IncomingCallCard onUseTranscript={handleUseVoiceTranscript} />
-          <PatientDetailsCard />
+          <div className="card">
+            <div className="panel-header">
+              <h2>Dispatch decision</h2>
+              {current && <StatusBadge status={current.status} />}
+            </div>
+            <DecisionTimeline timeline={timeline} current={current} />
+            {current && current.replan_count > 0 && (
+              <span
+                className="pill pill-warning"
+                title="The originally-picked ambulance or hospital stopped being valid (booked elsewhere, went on diversion, etc) after AEGIS chose it — it automatically found the next-best option instead of failing."
+              >
+                self-corrected {current.replan_count}× — re-routed automatically
+              </span>
+            )}
+            {current?.failure_reason && (
+              <span className="pill pill-error">Couldn't complete: {current.failure_reason}</span>
+            )}
+          </div>
+
+          {current?.incident && (
+            <SurvivalMeter timingLog={current.timing_log} chiefComplaint={current.incident.chief_complaint} />
+          )}
         </div>
 
-        <ConversationTranscriptCard />
+        {/* --- RIGHT: AI Brain + conversation --- */}
+        <div className="app-right">
+          <AgentReasoningPanel timeline={timeline} current={current} />
+          <ConversationTranscriptCard />
+        </div>
 
-        <DispatchForm onSubmit={startDispatch} isLoading={isRunning} />
+        {/* --- BOTTOM: supporting detail (scrollable strip) --- */}
+        <div className="app-bottom">
+          {current && (
+            <>
+              <div className="grid-2">
+                <IncidentIntakePanel state={current} />
+                <HospitalCapacityPanel
+                  fleet={fleet}
+                  selectedHospitalId={current.selected?.hospital.id ?? null}
+                  onStatusChanged={handleHospitalStatusChanged}
+                />
+              </div>
 
-        {error && <div className="card card-error">{error}</div>}
+              {current.prearrival && <CoachingPanel prearrival={current.prearrival} />}
+              {current.triage && <TriageCard triage={current.triage} />}
 
-        {current && (
-          <>
-            <div className="status-row">
-              <StatusBadge status={current.status} />
-              {current.replan_count > 0 && (
-                <span className="pill pill-warning" title="The originally-picked ambulance or hospital stopped being valid (booked elsewhere, went on diversion, etc) after AEGIS chose it — it automatically found the next-best option instead of failing.">
-                  self-corrected {current.replan_count}× — first pick fell through, AEGIS re-routed automatically
-                </span>
+              {baseline && current.selected && current.triage && (
+                <BaselineComparison baseline={baseline} selected={current.selected} triage={current.triage} />
               )}
-              {current.failure_reason && <span className="pill pill-error">Couldn't complete: {current.failure_reason}</span>}
-            </div>
 
-            <div className="grid-2">
-              <IncidentIntakePanel state={current} />
-              <HospitalCapacityPanel
-                fleet={fleet}
-                selectedHospitalId={current.selected?.hospital.id ?? null}
-                onStatusChanged={handleHospitalStatusChanged}
-              />
-            </div>
+              <CandidateList candidates={current.candidates} selected={current.selected} />
 
-            {current.prearrival && <CoachingPanel prearrival={current.prearrival} />}
-            {current.triage && <TriageCard triage={current.triage} />}
+              <div className="grid-2">
+                <ReservationCard reservation={current.reservation} />
+                <ComplexityPanel
+                  complexityScore={current.complexity_score}
+                  spawnedWorkers={current.spawned_workers}
+                  reverifiedCandidates={current.reverified_candidates}
+                />
+              </div>
 
-            {current.incident && (
-              <SurvivalMeter timingLog={current.timing_log} chiefComplaint={current.incident.chief_complaint} />
-            )}
-
-            {baseline && current.selected && current.triage && (
-              <BaselineComparison baseline={baseline} selected={current.selected} triage={current.triage} />
-            )}
-
-            <CandidateList candidates={current.candidates} selected={current.selected} />
-
-            <div className="grid-2">
-              <ReservationCard reservation={current.reservation} />
-              <ComplexityPanel
-                complexityScore={current.complexity_score}
-                spawnedWorkers={current.spawned_workers}
-                reverifiedCandidates={current.reverified_candidates}
-              />
-            </div>
-
-            <TimingBreakdown timingLog={current.timing_log} />
-          </>
-        )}
+              <TimingBreakdown timingLog={current.timing_log} />
+            </>
+          )}
+        </div>
       </div>
     </div>
   );
