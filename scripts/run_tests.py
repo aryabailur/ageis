@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SERVICE_DIRS = ["hospital_ambulance_data", "routing", "core_orchestrator"]
+SERVICE_DIRS = ["hospital_ambulance_data", "routing", "core_orchestrator", "call_intake_agent"]
 
 
 def main() -> int:
