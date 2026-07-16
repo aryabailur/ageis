@@ -1,5 +1,12 @@
 import { FormEvent, useState } from "react";
 import type { DispatchRequest } from "../api";
+import { useDeviceLocation } from "../hooks/useDeviceLocation";
+
+// Falls back to the seeded demo location (Bandra West, Mumbai) only when
+// the browser has no real position yet -- e.g. geolocation permission not
+// granted. Real calls should always prefer the caller's actual position.
+const FALLBACK_LAT = 19.0596;
+const FALLBACK_LNG = 72.8295;
 
 interface Preset {
   label: string;
@@ -25,12 +32,12 @@ const PRESETS: Preset[] = [
   },
 ];
 
-function freshDemoCall(transcript: string): DispatchRequest {
+function freshDemoCall(transcript: string, lat: number, lng: number): DispatchRequest {
   return {
     call_id: `call-${Date.now().toString(36)}`,
     raw_transcript: transcript,
-    caller_lat: 42.3601,
-    caller_lng: -71.0589,
+    caller_lat: lat,
+    caller_lng: lng,
   };
 }
 
@@ -40,12 +47,15 @@ interface Props {
 }
 
 export function DispatchForm({ onSubmit, isLoading }: Props) {
-  const [form, setForm] = useState<DispatchRequest>(() => freshDemoCall(PRESETS[0].transcript));
+  const device = useDeviceLocation();
+  const callerLat = device.lat ?? FALLBACK_LAT;
+  const callerLng = device.lng ?? FALLBACK_LNG;
+  const [form, setForm] = useState<DispatchRequest>(() => freshDemoCall(PRESETS[0].transcript, callerLat, callerLng));
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     onSubmit(form);
-    setForm(freshDemoCall(form.raw_transcript));
+    setForm(freshDemoCall(form.raw_transcript, callerLat, callerLng));
   }
 
   return (

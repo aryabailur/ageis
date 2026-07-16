@@ -168,7 +168,14 @@ export function useBrowserSpeechRecognition(): UseBrowserSpeechRecognitionResult
 
       recognitionRef.current = recognition;
       wantsListeningRef.current = true;
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (err) {
+        wantsListeningRef.current = false;
+        recognitionRef.current = null;
+        setError(`Couldn't start microphone: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
       setIsListening(true);
       void startAudioLevelMeter();
     },
