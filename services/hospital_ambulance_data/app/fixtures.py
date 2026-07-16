@@ -23,6 +23,12 @@ AMBULANCES: list[dict] = [
     {"id": "unit-9", "lat": 19.0420, "lng": 72.8150, "capability": "BLS", "status": "ON_CALL"},
     {"id": "unit-3", "lat": 19.0650, "lng": 72.8350, "capability": "ALS", "status": "AVAILABLE"},
     {"id": "unit-5", "lat": 19.0550, "lng": 72.8330, "capability": "ALS", "status": "AVAILABLE"},
+    # Extra ALS buffer so repeated demo/practice runs don't exhaust the
+    # pool mid-review -- reservations never release once a call completes.
+    {"id": "unit-6", "lat": 19.0630, "lng": 72.8260, "capability": "ALS", "status": "AVAILABLE"},
+    {"id": "unit-8", "lat": 19.0480, "lng": 72.8360, "capability": "ALS", "status": "AVAILABLE"},
+    {"id": "unit-10", "lat": 19.0570, "lng": 72.8420, "capability": "ALS", "status": "AVAILABLE"},
+    {"id": "unit-11", "lat": 19.0680, "lng": 72.8230, "capability": "ALS", "status": "AVAILABLE"},
 ]
 
 HOSPITALS: list[dict] = [

@@ -32,12 +32,14 @@ async def handle_twilio_media_stream(websocket: WebSocket) -> None:
     call_id: str | None = None
     deepgram: DeepgramStreamingClient | None = None
     relay_task: asyncio.Task | None = None
+    media_frames_received = 0
 
     try:
         while True:
             raw = await websocket.receive_text()
             message = json.loads(raw)
             event = message.get("event")
+            logger.info("twilio_stream event=%s call_id=%s", event, call_id)
 
             if event == "connected":
                 continue
@@ -56,22 +58,31 @@ async def handle_twilio_media_stream(websocket: WebSocket) -> None:
                         "source": "twilio",
                     }
                 )
-                deepgram = DeepgramStreamingClient()
-                await deepgram.connect()
+                try:
+                    deepgram = DeepgramStreamingClient()
+                    await deepgram.connect()
+                except Exception:
+                    logger.exception("Deepgram connect failed for call %s", call_id)
+                    raise
                 relay_task = asyncio.create_task(_relay_transcripts(call_id, deepgram))
+                logger.info("twilio_stream deepgram connected call_id=%s", call_id)
                 continue
 
             if event == "media" and deepgram is not None:
                 payload_b64 = message["media"]["payload"]
                 audio_bytes = base64.b64decode(payload_b64)
                 await deepgram.send_audio(audio_bytes)
+                media_frames_received += 1
                 continue
 
             if event == "stop":
                 break
 
-    except WebSocketDisconnect:
-        pass
+    except WebSocketDisconnect as exc:
+        logger.warning(
+            "twilio_stream disconnected early call_id=%s code=%s reason=%s media_frames_received=%d",
+            call_id, exc.code, exc.reason, media_frames_received,
+        )
     finally:
         if deepgram is not None:
             await deepgram.close()
@@ -88,6 +99,8 @@ async def handle_twilio_media_stream(websocket: WebSocket) -> None:
                     "source": "twilio",
                 }
             )
+        else:
+            logger.warning("twilio_stream ended before 'start' event ever arrived (media_frames_received=%d)", media_frames_received)
 
 
 async def _relay_transcripts(call_id: str, deepgram: DeepgramStreamingClient) -> None:
