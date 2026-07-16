@@ -1,43 +1,70 @@
-/* AEGIS command-center design tokens. Single source of truth for color,
-   spacing, motion, and elevation -- components should reference these
-   variables, not hardcoded values, so the theme stays consistent and
-   themeable (light mode overrides at the bottom). */
+/* AEGIS design tokens — utilitarian, high-contrast emergency-operations
+   console. Single source of truth for color, spacing, motion, and
+   typography; components reference these variables only, never hardcoded
+   hex values. Flat fills, hairline borders, no glassmorphism, no glow,
+   no gradients, no purple. */
 
 :root {
-  /* --- surface & text --- */
-  --bg: #0a0e17;
-  --bg-raised: #10151f;
-  --surface: #141a26;
-  --surface-hover: #1a2130;
-  --surface-2: #1c2333;
-  --border: #232b3d;
-  --border-strong: #2f3950;
-  --text: #eef1f8;
-  --text-muted: #8992a9;
-  --text-faint: #5c6580;
+  /* --- base surfaces --- */
+  --bg-primary: #0f1214;
+  --bg-secondary: #14171a;
+  --bg-tertiary: #1b1f23;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-subtle-strong: rgba(255, 255, 255, 0.14);
 
-  /* --- semantic status --- */
-  --success: #34d399;
-  --success-bg: rgba(52, 211, 153, 0.12);
-  --success-border: rgba(52, 211, 153, 0.35);
-  --warning: #f2b84b;
-  --warning-bg: rgba(242, 184, 75, 0.12);
-  --warning-border: rgba(242, 184, 75, 0.35);
-  --error: #f0576b;
-  --error-bg: rgba(240, 87, 107, 0.13);
-  --error-border: rgba(240, 87, 107, 0.35);
-  --info: #5b8def;
-  --info-bg: rgba(91, 141, 239, 0.12);
-  --info-border: rgba(91, 141, 239, 0.35);
-  --accent: #7c9eff;
+  /* legacy aliases (kept so existing component CSS keeps working
+     unchanged) -- values now point at the console palette above */
+  --bg: var(--bg-primary);
+  --bg-raised: var(--bg-secondary);
+  --surface: var(--bg-secondary);
+  --surface-hover: var(--bg-tertiary);
+  --surface-2: var(--bg-tertiary);
+  --border: var(--border-subtle);
+  --border-strong: var(--border-subtle-strong);
 
-  /* --- severity scale (SEV1 hottest -> SEV3 coolest) --- */
-  --sev1: #f0576b;
-  --sev1-bg: rgba(240, 87, 107, 0.14);
-  --sev2: #f2b84b;
-  --sev2-bg: rgba(242, 184, 75, 0.14);
-  --sev3: #34d399;
-  --sev3-bg: rgba(52, 211, 153, 0.14);
+  /* --- text --- */
+  --text-primary: #e8eaed;
+  --text-secondary: #9ca3af;
+  --text-disabled: #5a6169;
+
+  /* legacy aliases */
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-faint: var(--text-disabled);
+
+  /* --- single dominant accent (system-normal / brand) --- */
+  --accent-primary: #3da5a8;
+  --accent-primary-hover: #4bb8bb;
+  --accent: var(--accent-primary);
+
+  /* --- functional/status colors — reserved ONLY for their named state --- */
+  --status-critical: #d64545;
+  --status-warning: #d89b3c;
+  --status-success: #4a9b6e;
+  --status-info: #5b8dbf;
+
+  /* legacy aliases mapped onto the functional set above */
+  --success: var(--status-success);
+  --success-bg: rgba(74, 155, 110, 0.14);
+  --success-border: rgba(74, 155, 110, 0.4);
+  --warning: var(--status-warning);
+  --warning-bg: rgba(216, 155, 60, 0.14);
+  --warning-border: rgba(216, 155, 60, 0.4);
+  --error: var(--status-critical);
+  --error-bg: rgba(214, 69, 69, 0.14);
+  --error-border: rgba(214, 69, 69, 0.4);
+  --info: var(--status-info);
+  --info-bg: rgba(91, 141, 191, 0.14);
+  --info-border: rgba(91, 141, 191, 0.4);
+
+  /* --- severity scale (SEV1 hottest -> SEV3 coolest) -- functional, maps
+     1:1 onto critical/warning/success, never a separate palette --- */
+  --sev1: var(--status-critical);
+  --sev1-bg: rgba(214, 69, 69, 0.14);
+  --sev2: var(--status-warning);
+  --sev2-bg: rgba(216, 155, 60, 0.14);
+  --sev3: var(--status-success);
+  --sev3-bg: rgba(74, 155, 110, 0.14);
 
   /* --- spacing scale --- */
   --space-1: 4px;
@@ -49,37 +76,47 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* --- radius --- */
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
+  /* --- radius: small and functional, no pill shapes except status dots --- */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
   --radius-full: 999px;
 
-  /* --- elevation --- */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
-  --shadow-glow-error: 0 0 0 1px var(--error-border), 0 0 24px rgba(240, 87, 107, 0.18);
-  --shadow-glow-warning: 0 0 0 1px var(--warning-border), 0 0 24px rgba(242, 184, 75, 0.18);
-  --shadow-glow-success: 0 0 0 1px var(--success-border), 0 0 24px rgba(52, 211, 153, 0.14);
+  /* --- elevation: hairline borders do the separation work; shadows are
+     minimal, no colored glow --- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
 
   /* --- motion --- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-fast: 120ms;
-  --dur-base: 220ms;
-  --dur-slow: 420ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
 
   /* --- type scale --- */
-  --font-sans: -apple-system, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
-  --text-xs: 11px;
-  --text-sm: 12.5px;
-  --text-base: 14px;
-  --text-md: 15px;
-  --text-lg: 18px;
-  --text-xl: 22px;
-  --text-2xl: 28px;
+  --font-sans: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --text-xs: 12px;
+  --text-sm: 13.5px;
+  --text-base: 15px;
+  --text-md: 16px;
+  --text-lg: 19px;
+  --text-xl: 23px;
+  --text-2xl: 27px;
+  --text-3xl: 33px;
+
+  /* --- panel surfaces: flat fill + hairline border, no blur/translucency --- */
+  --panel-bg: var(--bg-secondary);
+  --panel-border: var(--border-subtle);
+  --rail-width: 380px;
+
+  /* --- agent accent (used only by the 5 AI-agent cards) --- */
+  --agent-idle: var(--text-disabled);
+  --agent-active: var(--status-info);
+  --agent-active-bg: rgba(91, 141, 191, 0.1);
+  --agent-done: var(--status-success);
 
   color-scheme: dark;
 }
@@ -89,31 +126,27 @@
    toggle (if any) can force a side. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #f4f6fb;
-    --bg-raised: #ffffff;
-    --surface: #ffffff;
-    --surface-hover: #f1f4fa;
-    --surface-2: #eef1f8;
-    --border: #dde3ef;
-    --border-strong: #c7d0e3;
-    --text: #131826;
-    --text-muted: #5b6478;
-    --text-faint: #8891a6;
+    --bg-primary: #f4f5f6;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #eceef0;
+    --border-subtle: rgba(15, 18, 20, 0.1);
+    --border-subtle-strong: rgba(15, 18, 20, 0.18);
+    --text-primary: #14171a;
+    --text-secondary: #5a6169;
+    --text-disabled: #8a919c;
     color-scheme: light;
   }
 }
 
 :root[data-theme="light"] {
-  --bg: #f4f6fb;
-  --bg-raised: #ffffff;
-  --surface: #ffffff;
-  --surface-hover: #f1f4fa;
-  --surface-2: #eef1f8;
-  --border: #dde3ef;
-  --border-strong: #c7d0e3;
-  --text: #131826;
-  --text-muted: #5b6478;
-  --text-faint: #8891a6;
+  --bg-primary: #f4f5f6;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #eceef0;
+  --border-subtle: rgba(15, 18, 20, 0.1);
+  --border-subtle-strong: rgba(15, 18, 20, 0.18);
+  --text-primary: #14171a;
+  --text-secondary: #5a6169;
+  --text-disabled: #8a919c;
   color-scheme: light;
 }
 

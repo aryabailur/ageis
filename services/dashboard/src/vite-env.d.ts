@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_ORCHESTRATOR_URL?: string;
+  readonly VITE_GOOGLE_MAPS_KEY?: string;
 }
 
 interface ImportMeta {
