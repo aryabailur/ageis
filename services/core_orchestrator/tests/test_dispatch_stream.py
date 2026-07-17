@@ -20,8 +20,8 @@ requires_supabase = pytest.mark.skipif(
     reason="SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured -- reserve_ambulance needs a real DB",
 )
 
-DEMO_PATIENT_LAT = 42.3601
-DEMO_PATIENT_LNG = -71.0589
+DEMO_PATIENT_LAT = 19.0596
+DEMO_PATIENT_LNG = 72.8295
 
 
 @pytest.fixture(autouse=True)

@@ -28,7 +28,7 @@ from google.genai import types as genai_types
 
 logger = logging.getLogger("aegis.voice.conversation")
 
-MODEL = "gemini-3.5-flash"
+MODEL = "gemini-2.5-flash"
 
 SYSTEM_PROMPT = """You are AEGIS, an AI emergency dispatch assistant speaking directly with a caller \
 reporting a medical emergency over a phone-like voice interface. Your job is to sound calm, brief, \

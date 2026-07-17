@@ -1,6 +1,16 @@
 import type { CandidateAssignment, DispatchState, FleetSnapshot, Hospital, NaiveBaseline, StreamEvent, TriageResult } from "./types";
 
-const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL ?? "http://localhost:8000";
+export function getOrchestratorUrl(): string {
+  const envUrl = import.meta.env.VITE_ORCHESTRATOR_URL;
+  if (envUrl === "") {
+    return "";
+  }
+  const url = envUrl ?? "http://localhost:8000";
+  const hostname = window.location.hostname;
+  return url.replace("localhost", hostname).replace("127.0.0.1", hostname);
+}
+
+const ORCHESTRATOR_URL = getOrchestratorUrl();
 
 export interface DispatchRequest {
   call_id: string;

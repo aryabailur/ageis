@@ -39,11 +39,10 @@ from .voice.twilio_webhook import incoming_call_twiml
 app = FastAPI(title="AEGIS Core Orchestrator")
 
 # The React dashboard calls this API directly from the browser. Dev-mode
-# origins only; tighten this to the deployed dashboard's real origin
-# before shipping anywhere non-local.
+# origins only; allow all origins in dev/ngrok/mobile environments.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -261,7 +260,7 @@ async def voice_browser_transcript(request: BrowserTranscriptRequest):
     to any connected dashboard over /voice/live -- the same event shape
     Twilio calls produce via twilio_stream.py, so the frontend has one
     single code path for rendering a live transcript regardless of
-    which capture mode produced it."""
+    which guest mode produced it."""
     if voice_session.get(request.call_id) is None:
         voice_session.start(request.call_id, source="browser", caller_number=request.caller_number)
         await voice_connection_manager.broadcast(
@@ -284,20 +283,32 @@ async def voice_browser_transcript(request: BrowserTranscriptRequest):
         }
     )
 
+    ai_reply = None
+    is_complete = False
+    patient_details = {}
+
     if request.conversation_mode and request.is_final and request.text.strip():
-        await _run_conversation_turn(
+        turn = await _run_conversation_turn(
             request.call_id,
             request.text,
             caller_lat=request.caller_lat,
             caller_lng=request.caller_lng,
         )
+        ai_reply = turn.reply_text
+        is_complete = turn.is_complete
+        patient_details = turn.extracted
 
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "ai_reply": ai_reply,
+        "is_complete": is_complete,
+        "patient_details": patient_details,
+    }
 
 
 async def _run_conversation_turn(
     call_id: str, user_utterance: str, *, caller_lat: float | None, caller_lng: float | None
-) -> None:
+):
     """Runs one AI-dispatcher turn (patient utterance -> AI reply +
     extraction) and broadcasts the AI's reply and the live extraction
     over the existing /voice/live socket. Once the AI decides it has
@@ -330,7 +341,7 @@ async def _run_conversation_turn(
     )
 
     if not turn.is_complete:
-        return
+        return turn
 
     session = voice_session.get(call_id)
     await voice_connection_manager.broadcast(
@@ -345,6 +356,7 @@ async def _run_conversation_turn(
         }
     )
     voice_conversation.end(call_id)
+    return turn
 
 
 @app.post("/voice/browser/{call_id}/end")

@@ -16,8 +16,8 @@ from app import reservation_store
 from app.nodes import compute_route_estimates, dispatch_lifecycle, ingest_extract_triage, load_resources, rank_assignments
 from app.run_batch import run_batch
 
-DEMO_PATIENT_LAT = 42.3601
-DEMO_PATIENT_LNG = -71.0589
+DEMO_PATIENT_LAT = 19.0596
+DEMO_PATIENT_LNG = 72.8295
 
 requires_supabase = pytest.mark.skipif(
     not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_ROLE_KEY")),

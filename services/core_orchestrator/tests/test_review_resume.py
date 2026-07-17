@@ -31,8 +31,8 @@ requires_supabase = pytest.mark.skipif(
     reason="SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured -- reserve_ambulance needs a real DB",
 )
 
-DEMO_PATIENT_LAT = 42.3601
-DEMO_PATIENT_LNG = -71.0589
+DEMO_PATIENT_LAT = 19.0596
+DEMO_PATIENT_LNG = 72.8295
 INTAKE_OVERRIDE_CALL_ID = "call-review-intake-001"
 ASSIGNMENT_OVERRIDE_CALL_ID = "call-review-assignment-001"
 
@@ -131,7 +131,7 @@ async def test_intake_override_resumes_without_rerunning_triage_from_transcript(
         caller_lng=DEMO_PATIENT_LNG,
     )
     state = state.model_copy(update=ingest_call(state))
-    state = state.model_copy(update=extract_incident(state))
+    state = state.model_copy(update=await extract_incident(state))
     assert state.incident.transcript_quality.value == "low" or state.incident.chief_complaint == "UNKNOWN"
 
     corrected_triage = TriageResult(

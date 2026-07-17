@@ -18,10 +18,10 @@ export default defineConfig({
     // protection) -- allow the ngrok domain so the tunnel works.
     allowedHosts: [".ngrok-free.dev", ".ngrok-free.app", ".ngrok.io"],
     proxy: {
-      "/voice": { target: ORCHESTRATOR, ws: true },
-      "/dispatch": { target: ORCHESTRATOR },
-      "/admin": { target: ORCHESTRATOR },
-      "/baseline": { target: ORCHESTRATOR },
+      "/voice": { target: ORCHESTRATOR, ws: true, changeOrigin: true, secure: false },
+      "/dispatch": { target: ORCHESTRATOR, changeOrigin: true, secure: false },
+      "/admin": { target: ORCHESTRATOR, changeOrigin: true, secure: false },
+      "/baseline": { target: ORCHESTRATOR, changeOrigin: true, secure: false },
     },
   },
 });

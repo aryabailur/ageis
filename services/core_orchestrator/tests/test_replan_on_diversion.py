@@ -24,8 +24,8 @@ from app.nodes import (
     rank_assignments,
 )
 
-DEMO_PATIENT_LAT = 42.3601
-DEMO_PATIENT_LNG = -71.0589
+DEMO_PATIENT_LAT = 19.0596
+DEMO_PATIENT_LNG = 72.8295
 CALL_ID = "call-diversion-replan-001"
 
 requires_supabase = pytest.mark.skipif(

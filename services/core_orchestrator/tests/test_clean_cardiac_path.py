@@ -22,8 +22,8 @@ from app.nodes import (
     rank_assignments,
 )
 
-DEMO_PATIENT_LAT = 42.3601
-DEMO_PATIENT_LNG = -71.0589
+DEMO_PATIENT_LAT = 19.0596
+DEMO_PATIENT_LNG = 72.8295
 
 requires_supabase = pytest.mark.skipif(
     not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SERVICE_ROLE_KEY")),
