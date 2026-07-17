@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVoiceStore } from "../store/voiceStore";
+import { getOrchestratorUrl } from "../api";
 
-const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL ?? "http://localhost:8000";
+const ORCHESTRATOR_URL = getOrchestratorUrl();
 
 // The AI's reply arrives over a separate WebSocket (voiceStore's
 // /voice/live), not as the direct response to postTranscript's fetch --
@@ -53,6 +54,9 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
   const speakingRef = useRef(false);
   const lastAiTextRef = useRef<string>("");
   const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accumulatedTranscriptRef = useRef<string>("");
+  const postTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProcessedIndexRef = useRef<number>(-1);
 
   const clearThinkingTimeout = useCallback(() => {
     if (thinkingTimeoutRef.current) {
@@ -77,7 +81,18 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
 
     utterance.onend = () => {
       speakingRef.current = false;
-      if (wantsListeningRef.current) {
+      const isReady = useVoiceStore.getState().readyForDispatch;
+      if (isReady) {
+        wantsListeningRef.current = false;
+        clearThinkingTimeout();
+        recognitionRef.current?.stop();
+        recognitionRef.current = null;
+        if (callIdRef.current) {
+          fetch(`${ORCHESTRATOR_URL}/voice/browser/${encodeURIComponent(callIdRef.current)}/end`, { method: "POST" }).catch(() => {});
+        }
+        callIdRef.current = null;
+        setStatus("ended");
+      } else if (wantsListeningRef.current) {
         setStatus("listening");
         try {
           recognitionRef.current?.start();
@@ -88,7 +103,18 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     };
     utterance.onerror = () => {
       speakingRef.current = false;
-      if (wantsListeningRef.current) {
+      const isReady = useVoiceStore.getState().readyForDispatch;
+      if (isReady) {
+        wantsListeningRef.current = false;
+        clearThinkingTimeout();
+        recognitionRef.current?.stop();
+        recognitionRef.current = null;
+        if (callIdRef.current) {
+          fetch(`${ORCHESTRATOR_URL}/voice/browser/${encodeURIComponent(callIdRef.current)}/end`, { method: "POST" }).catch(() => {});
+        }
+        callIdRef.current = null;
+        setStatus("ended");
+      } else if (wantsListeningRef.current) {
         setStatus("listening");
         try {
           recognitionRef.current?.start();
@@ -99,7 +125,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     };
 
     window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [clearThinkingTimeout]);
 
   // The AI's spoken reply arrives as a "transcript_update" broadcast with
   // source: "ai" over the SAME /voice/live socket voiceStore already
@@ -151,7 +177,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
             { timeout: 3000 },
           );
         });
-        await fetch(`${ORCHESTRATOR_URL}/voice/browser/transcript`, {
+        const res = await fetch(`${ORCHESTRATOR_URL}/voice/browser/transcript`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -163,12 +189,62 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
             caller_lng: geo?.coords.longitude ?? null,
           }),
         });
+        const data = await res.json();
+        if (data.status === "ok" && data.ai_reply) {
+          // Fallback: manually commit the AI reply and extraction results to the store
+          // to guarantee the UI updates and voice speaks even if the WebSocket drops.
+          useVoiceStore.setState((s) => {
+            const alreadyExists = s.conversationMessages.some(
+              (m) => m.role === "ai" && m.text === data.ai_reply
+            );
+            if (alreadyExists) return {};
+
+            const aiMessage = { role: "ai" as const, text: data.ai_reply, ts: Date.now() };
+            return {
+              conversationMessages: [...s.conversationMessages, aiMessage],
+              patientDetails: { ...s.patientDetails, ...data.patient_details },
+              readyForDispatch: data.is_complete ?? s.readyForDispatch,
+              dispatchReadyPayload: data.is_complete
+                ? {
+                    call_id: callIdRef.current!,
+                    raw_transcript: s.currentTranscript + " " + text.trim(),
+                    caller_lat: geo?.coords.latitude ?? 0,
+                    caller_lng: geo?.coords.longitude ?? 0,
+                  }
+                : s.dispatchReadyPayload,
+            };
+          });
+        }
       } catch {
         clearThinkingTimeout();
         setError("Lost connection to AEGIS. Trying to keep listening.");
       }
     },
     [clearThinkingTimeout],
+  );
+
+  const debouncePostTranscript = useCallback(
+    (text: string) => {
+      const cleanText = text.trim();
+      if (!cleanText) return;
+
+      const currentAcc = accumulatedTranscriptRef.current;
+      if (cleanText.toLowerCase().startsWith(currentAcc.toLowerCase())) {
+        accumulatedTranscriptRef.current = cleanText;
+      } else {
+        accumulatedTranscriptRef.current = `${currentAcc} ${cleanText}`.trim();
+      }
+
+      if (postTimeoutRef.current) {
+        clearTimeout(postTimeoutRef.current);
+      }
+      postTimeoutRef.current = setTimeout(() => {
+        postTranscript(accumulatedTranscriptRef.current);
+        accumulatedTranscriptRef.current = "";
+        postTimeoutRef.current = null;
+      }, 1200);
+    },
+    [postTranscript],
   );
 
   const start = useCallback(
@@ -182,6 +258,18 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       setStatus("connecting");
       callIdRef.current = callId;
       lastAiTextRef.current = "";
+      lastProcessedIndexRef.current = -1;
+
+      // Unlock SpeechSynthesis for mobile browsers
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        try {
+          const silentUtterance = new SpeechSynthesisUtterance(" ");
+          silentUtterance.volume = 0;
+          window.speechSynthesis.speak(silentUtterance);
+        } catch (e) {
+          console.warn("Failed to play silent utterance for SpeechSynthesis unlock:", e);
+        }
+      }
 
       const recognition = new Ctor();
       recognition.continuous = true;
@@ -190,8 +278,9 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          if (result.isFinal) {
-            postTranscript(result[0].transcript);
+          if (result.isFinal && i > lastProcessedIndexRef.current) {
+            lastProcessedIndexRef.current = i;
+            debouncePostTranscript(result[0].transcript);
           }
         }
       };
@@ -231,12 +320,17 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         setStatus("error");
       }
     },
-    [Ctor, postTranscript],
+    [Ctor, debouncePostTranscript],
   );
 
   const stop = useCallback(() => {
     wantsListeningRef.current = false;
     clearThinkingTimeout();
+    if (postTimeoutRef.current) {
+      clearTimeout(postTimeoutRef.current);
+      postTimeoutRef.current = null;
+    }
+    accumulatedTranscriptRef.current = "";
     window.speechSynthesis.cancel();
     recognitionRef.current?.stop();
     recognitionRef.current = null;

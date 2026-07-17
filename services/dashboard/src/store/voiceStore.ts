@@ -1,6 +1,7 @@
 import { create } from "zustand";
+import { getOrchestratorUrl } from "../api";
 
-const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL ?? "http://localhost:8000";
+const ORCHESTRATOR_URL = getOrchestratorUrl();
 // Empty VITE_ORCHESTRATOR_URL means "same origin, Vite proxies to the
 // backend" (see vite.config.ts) -- fetches go relative automatically, but
 // the WebSocket constructor needs an absolute URL, so derive it from the
@@ -149,16 +150,24 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
           const conversationMessages =
             message && payload.is_final ? [...s.conversationMessages, message] : s.conversationMessages;
 
+          const isAi = payload.source === "ai";
+
           if (payload.is_final) {
             return {
               callId: payload.call_id,
-              currentTranscript: `${s.currentTranscript} ${payload.text ?? ""}`.trim(),
-              interimText: "",
-              source: payload.source ?? s.source,
+              currentTranscript: isAi
+                ? s.currentTranscript
+                : `${s.currentTranscript} ${payload.text ?? ""}`.trim(),
+              interimText: isAi ? s.interimText : "",
+              source: (payload.source && payload.source !== "ai") ? payload.source : s.source,
               conversationMessages,
             };
           }
-          return { callId: payload.call_id, interimText: payload.text ?? "", source: payload.source ?? s.source };
+          return {
+            callId: payload.call_id,
+            interimText: isAi ? s.interimText : (payload.text ?? ""),
+            source: (payload.source && payload.source !== "ai") ? payload.source : s.source,
+          };
         });
         return;
       }
@@ -174,12 +183,14 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
 
     ws.onclose = () => {
       set({ isSocketConnected: false });
-      socket = null;
-      // Auto-reconnect: this socket has no user-facing "retry" affordance,
-      // and a dropped connection during a live call would otherwise
-      // silently stop transcript updates with no way to recover short of
-      // a page reload.
-      reconnectTimer = setTimeout(() => get().connect(), 2000);
+      if (socket === ws) {
+        socket = null;
+        // Auto-reconnect: this socket has no user-facing "retry" affordance,
+        // and a dropped connection during a live call would otherwise
+        // silently stop transcript updates with no way to recover short of
+        // a page reload.
+        reconnectTimer = setTimeout(() => get().connect(), 2000);
+      }
     };
 
     ws.onerror = () => {

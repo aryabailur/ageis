@@ -51,6 +51,8 @@ export function useBrowserSpeechRecognition(): UseBrowserSpeechRecognitionResult
   // value, so a ref is the only reliable way for those handlers to know
   // "does the user still want this running" right now.
   const wantsListeningRef = useRef(false);
+  const lastProcessedIndexRef = useRef<number>(-1);
+  const lastFinalTextRef = useRef<string>("");
 
   const Ctor = getSpeechRecognitionCtor();
   const isSupported = Ctor !== null;
@@ -114,6 +116,8 @@ export function useBrowserSpeechRecognition(): UseBrowserSpeechRecognitionResult
       }
       setError(null);
       callIdRef.current = callId;
+      lastProcessedIndexRef.current = -1;
+      lastFinalTextRef.current = "";
 
       const recognition = new Ctor();
       recognition.continuous = true;
@@ -124,9 +128,22 @@ export function useBrowserSpeechRecognition(): UseBrowserSpeechRecognitionResult
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const text = result[0].transcript;
+          const text = result[0].transcript.trim();
           if (result.isFinal) {
-            postTranscript(text, true);
+            if (i > lastProcessedIndexRef.current) {
+              lastProcessedIndexRef.current = i;
+              
+              const prev = lastFinalTextRef.current;
+              let chunk = text;
+              if (prev && text.toLowerCase().startsWith(prev.toLowerCase())) {
+                chunk = text.substring(prev.length).trim();
+              }
+              lastFinalTextRef.current = text;
+              
+              if (chunk) {
+                postTranscript(chunk, true);
+              }
+            }
           } else {
             interim += text;
           }

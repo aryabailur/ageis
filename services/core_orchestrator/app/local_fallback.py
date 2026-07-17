@@ -10,14 +10,14 @@ from __future__ import annotations
 import math
 
 CACHED_AMBULANCES = [
-    {"id": "unit-7", "lat": 42.3550, "lng": -71.0700, "capability": "ALS", "status": "AVAILABLE"},
+    {"id": "unit-7", "lat": 19.0520, "lng": 72.8200, "capability": "ALS", "status": "AVAILABLE"},
 ]
 
 CACHED_HOSPITALS = [
     {
         "id": "hosp-cardiac-center",
-        "lat": 42.3520,
-        "lng": -71.0750,
+        "lat": 19.0490,
+        "lng": 72.8180,
         "bed_count": 3,
         "specialties": ["general", "cardiac"],
         "status": "OPEN",
