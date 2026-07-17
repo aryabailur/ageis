@@ -340,21 +340,31 @@ async def _run_conversation_turn(
         }
     )
 
+    session = voice_session.get(call_id)
+
+    # Trigger early dispatch side-by-side as soon as we know the chief complaint
+    # so the rest of the agents can start working while the AI voice assistant
+    # continues asking follow-up questions.
+    has_initial_emergency = turn.extracted.get("symptoms") or turn.extracted.get("emergency_type")
+    if session and has_initial_emergency and not session.dispatched:
+        session.dispatched = True
+        await voice_connection_manager.broadcast(
+            {
+                "type": "call_status",
+                "call_id": call_id,
+                "ready_for_dispatch": True,
+                "raw_transcript": session.transcript,
+                "caller_lat": caller_lat,
+                "caller_lng": caller_lng,
+            }
+        )
+
     if not turn.is_complete:
         return turn
 
-    session = voice_session.get(call_id)
-    await voice_connection_manager.broadcast(
-        {
-            "type": "call_status",
-            "call_id": call_id,
-            "status": "ready_for_dispatch",
-            "ready_for_dispatch": True,
-            "raw_transcript": session.transcript if session else user_utterance,
-            "caller_lat": caller_lat,
-            "caller_lng": caller_lng,
-        }
-    )
+    # When the conversation is fully complete (all questions answered), we end
+    # the conversation loop. If we already dispatched early, we don't need to
+    # dispatch again.
     voice_conversation.end(call_id)
     return turn
 
@@ -369,6 +379,8 @@ async def voice_browser_end(call_id: str):
             "type": "call_status",
             "call_id": call_id,
             "status": "ended",
+            "ready_for_dispatch": True,
+            "raw_transcript": ended.transcript if ended else "",
             "duration_s": ended.duration_s if ended else None,
             "source": "browser",
         }

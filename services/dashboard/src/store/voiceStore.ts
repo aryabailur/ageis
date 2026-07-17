@@ -144,8 +144,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
             ? {
                 call_id: payload.call_id,
                 raw_transcript: payload.raw_transcript ?? "",
-                caller_lat: payload.caller_lat ?? 0,
-                caller_lng: payload.caller_lng ?? 0,
+                caller_lat: payload.caller_lat ?? (s.callerLat ?? 0),
+                caller_lng: payload.caller_lng ?? (s.callerLng ?? 0),
               }
             : s.dispatchReadyPayload,
         }));

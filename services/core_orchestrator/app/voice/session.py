@@ -25,6 +25,7 @@ class CallSession:
     ended_at: float | None = None
     transcript: str = ""
     interim_text: str = ""
+    dispatched: bool = False
 
     @property
     def duration_s(self) -> float:
