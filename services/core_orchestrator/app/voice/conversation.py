@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -180,7 +181,115 @@ def _parse_turn(raw_text: str) -> ConversationTurn:
 GEMINI_RETRY_ATTEMPTS = 3
 GEMINI_RETRY_DELAY_S = 1.0
 
-_FALLBACK_REPLY = "Sorry, I'm having trouble hearing you clearly. Could you say that again?"
+def _contains(text: str, *phrases: str) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def _deterministic_fallback_turn(session: ConversationSession, latest: str) -> ConversationTurn:
+    """Continue a minimal intake locally when every AI provider is unavailable.
+
+    Only explicitly stated facts are extracted. This function never diagnoses,
+    ranks resources, or dispatches anything.
+    """
+    text = " ".join(latest.lower().split())
+    details = dict(session.patient_details)
+    required = ("symptoms", "breathing", "conscious", "age", "location_text")
+    expected = next((field for field in required if details.get(field) is None), None)
+
+    if details.get("symptoms") is None and (
+        expected == "symptoms"
+        or _contains(
+            text,
+            "chest pain",
+            "heart attack",
+            "cardiac",
+            "bleeding",
+            "accident",
+            "choking",
+            "seizure",
+            "fainted",
+            "pain",
+        )
+    ):
+        details["symptoms"] = latest.strip()
+        if _contains(text, "chest pain", "heart attack", "cardiac"):
+            details["emergency_type"] = "cardiac"
+        elif _contains(text, "bleeding", "blood loss"):
+            details["emergency_type"] = "bleeding"
+        elif _contains(text, "accident", "crash", "collision"):
+            details["emergency_type"] = "accident"
+        elif _contains(text, "choking"):
+            details["emergency_type"] = "choking"
+
+    abnormal_breathing = _contains(
+        text,
+        "not breathing",
+        "isn't breathing",
+        "isnt breathing",
+        "can't breathe",
+        "cant breathe",
+        "difficulty breathing",
+        "breathing is bad",
+        "gasping",
+        "saans nahi",
+        "saans nahin",
+    )
+    normal_breathing = _contains(text, "breathing normally", "breathing is normal", "breathing is fine")
+    if abnormal_breathing:
+        details["breathing"] = "abnormal"
+    elif normal_breathing or (expected == "breathing" and text in {"yes", "yes he is", "yes she is", "haan", "ha"}):
+        details["breathing"] = "normal"
+    elif expected == "breathing" and text in {"no", "no he isn't", "no she isn't", "nahi", "nahin"}:
+        details["breathing"] = "abnormal"
+
+    if _contains(text, "unconscious", "not conscious", "unresponsive", "passed out", "behosh"):
+        details["conscious"] = False
+    elif _contains(text, "conscious", "responsive", "awake", "hosh mein"):
+        details["conscious"] = True
+    elif expected == "conscious" and text in {"yes", "yes he is", "yes she is", "haan", "ha"}:
+        details["conscious"] = True
+    elif expected == "conscious" and text in {"no", "no he isn't", "no she isn't", "nahi", "nahin"}:
+        details["conscious"] = False
+
+    age_match = re.search(r"\b(?:age(?:d)?|years? old|saal|umar)\D{0,8}(\d{1,3})\b", text)
+    if age_match is None:
+        age_match = re.search(r"\b(\d{1,3})\s*(?:years? old|year|saal)\b", text)
+    if age_match is None and expected == "age":
+        age_match = re.fullmatch(r"\D*(\d{1,3})\D*", text)
+    if age_match:
+        age = int(age_match.group(1))
+        if 0 < age <= 120:
+            details["age"] = age
+
+    location_markers = ("near ", "at ", "in ", "address", "landmark", "road", "street", "hospital", "station")
+    if details.get("location_text") is None and (
+        expected == "location_text" or any(marker in text for marker in location_markers)
+    ):
+        if len(text) >= 3 and text not in {"yes", "no", "haan", "nahi", "nahin"}:
+            details["location_text"] = latest.strip()
+
+    if details.get("breathing") == "abnormal" or details.get("conscious") is False:
+        details["severity"] = "critical"
+    elif details.get("emergency_type") in {"cardiac", "bleeding", "choking", "accident"}:
+        details["severity"] = "serious"
+    details["confidence"] = round(sum(details.get(field) is not None for field in required) / len(required), 2)
+
+    missing = next((field for field in required if details.get(field) is None), None)
+    replies = {
+        "symptoms": "Please briefly tell me what happened and the main symptom.",
+        "breathing": "Is the patient breathing normally?",
+        "conscious": "Is the patient conscious and responding?",
+        "age": "What is the patient's approximate age?",
+        "location_text": "What is your exact location or nearest landmark?",
+    }
+    is_complete = missing is None
+    reply = (
+        "Thank you. I have the required details and am transferring them to the AEGIS dispatch system."
+        if is_complete
+        else replies[missing]
+    )
+    extracted = {key: value for key, value in details.items() if session.patient_details.get(key) != value}
+    return ConversationTurn(reply_text=reply, extracted=extracted, is_complete=is_complete)
 
 
 def _call_gemini(client: genai.Client, contents: list[genai_types.Content]) -> str:
@@ -206,14 +315,18 @@ def next_turn(call_id: str, latest_user_utterance: str) -> ConversationTurn:
     AI should say next plus the newly-merged patient extraction.
 
     Design Law 4 applies here same as every other external call in this
-    system: a transient Gemini failure (rate limit, 503 capacity) gets one
-    short retry, and if that also fails, the caller gets a safe "please
-    repeat" turn instead of a dropped call -- never a crash mid-conversation.
+    system: transient Gemini failures are retried, while exhausted quota or
+    provider downtime immediately falls back to the local protocol intake.
+    The caller is never dropped and the fallback only records explicit facts.
     """
     session = get_or_create(call_id)
     session.messages.append({"role": "user", "content": latest_user_utterance})
 
-    client = _client()
+    try:
+        client = _client()
+    except Exception as exc:
+        logger.warning("Gemini client unavailable for call %s: %s", call_id, exc)
+        client = None
     # Gemini's turn roles are "user" / "model" (not Anthropic's "assistant"),
     # so history stored with the generic {"role", "content"} shape is
     # translated at the call boundary rather than baked into the session
@@ -227,8 +340,9 @@ def next_turn(call_id: str, latest_user_utterance: str) -> ConversationTurn:
     ]
 
     raw_text: str | None = None
-    for attempt in range(GEMINI_RETRY_ATTEMPTS):
+    for attempt in range(GEMINI_RETRY_ATTEMPTS if client is not None else 0):
         try:
+            assert client is not None
             raw_text = _call_gemini(client, contents)
             break
         except Exception as exc:
@@ -236,18 +350,20 @@ def next_turn(call_id: str, latest_user_utterance: str) -> ConversationTurn:
                 "Gemini call failed (attempt %d/%d) for call %s: %s",
                 attempt + 1, GEMINI_RETRY_ATTEMPTS, call_id, exc,
             )
+            if "RESOURCE_EXHAUSTED" in str(exc) or "quota" in str(exc).lower():
+                break
             if attempt == GEMINI_RETRY_ATTEMPTS - 1:
                 break
             time.sleep(GEMINI_RETRY_DELAY_S)
 
     if raw_text is None:
-        # Every attempt failed -- don't merge a user turn into history with
-        # no assistant reply to match it (would desync the user/model
-        # alternation Gemini expects next turn), and don't mark anything
-        # extracted/complete from a call that never actually ran.
-        return ConversationTurn(reply_text=_FALLBACK_REPLY, extracted={}, is_complete=False)
-
-    turn = _parse_turn(raw_text)
+        logger.warning("Gemini unavailable for call %s; using deterministic intake", call_id)
+        turn = _deterministic_fallback_turn(session, latest_user_utterance)
+        raw_text = json.dumps(
+            {"reply_text": turn.reply_text, "extracted": turn.extracted, "is_complete": turn.is_complete}
+        )
+    else:
+        turn = _parse_turn(raw_text)
 
     session.messages.append({"role": "assistant", "content": raw_text})
     session.patient_details.update(turn.extracted)

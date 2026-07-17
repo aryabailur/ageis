@@ -9,6 +9,7 @@ const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL ?? "http://localh
 // broadcast is lost with nothing to retry it, and "thinking" would
 // otherwise hang forever with no visible signal. This bounds the wait.
 const THINKING_TIMEOUT_MS = 15_000;
+const VOICE_SOCKET_TIMEOUT_MS = 5_000;
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
@@ -26,8 +27,30 @@ export interface UseConversationOrchestratorResult {
   status: ConversationStatus;
   error: string | null;
   isSupported: boolean;
+  isMuted: boolean;
   start: (callId: string) => Promise<void>;
   stop: () => void;
+  setMuted: (muted: boolean) => void;
+}
+
+function waitForVoiceSocket(): Promise<boolean> {
+  if (useVoiceStore.getState().isSocketConnected) return Promise.resolve(true);
+  useVoiceStore.getState().connect();
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    const finish = (connected: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      unsubscribe();
+      resolve(connected);
+    };
+    const unsubscribe = useVoiceStore.subscribe((state) => {
+      if (state.isSocketConnected) finish(true);
+    });
+    timeout = setTimeout(() => finish(false), VOICE_SOCKET_TIMEOUT_MS);
+  });
 }
 
 /**
@@ -46,6 +69,7 @@ export interface UseConversationOrchestratorResult {
 export function useConversationOrchestrator(): UseConversationOrchestratorResult {
   const [status, setStatus] = useState<ConversationStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [isMuted, setIsMutedState] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const callIdRef = useRef<string | null>(null);
@@ -180,8 +204,16 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       }
       setError(null);
       setStatus("connecting");
+      setIsMutedState(false);
       callIdRef.current = callId;
       lastAiTextRef.current = "";
+
+      if (!(await waitForVoiceSocket())) {
+        setError("Could not connect to the AEGIS voice service. Make sure the backend is running and try again.");
+        setStatus("error");
+        callIdRef.current = null;
+        return;
+      }
 
       const recognition = new Ctor();
       recognition.continuous = true;
@@ -202,6 +234,18 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         // recoverable ones, is what let us tell a real stuck-listening
         // bug apart from normal silence during on-device debugging.
         console.warn("[AEGIS] SpeechRecognition error:", event.error, event.message);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          wantsListeningRef.current = false;
+          setError("Microphone permission was denied. Allow microphone access in your browser, then try again.");
+          setStatus("error");
+          return;
+        }
+        if (event.error === "audio-capture") {
+          wantsListeningRef.current = false;
+          setError("No working microphone was found. Connect or enable a microphone, then try again.");
+          setStatus("error");
+          return;
+        }
         const recoverable = event.error === "no-speech" || event.error === "network" || event.error === "aborted";
         if (!recoverable) {
           setError(`Microphone error: ${event.error}. Trying to recover.`);
@@ -227,6 +271,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         recognition.start();
         setStatus("listening");
       } catch {
+        wantsListeningRef.current = false;
         setError("Could not access the microphone. Check permissions and try again.");
         setStatus("error");
       }
@@ -244,10 +289,28 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       fetch(`${ORCHESTRATOR_URL}/voice/browser/${encodeURIComponent(callIdRef.current)}/end`, { method: "POST" }).catch(() => {});
     }
     callIdRef.current = null;
+    setIsMutedState(false);
     setStatus("ended");
   }, [clearThinkingTimeout]);
 
+  const setMuted = useCallback((muted: boolean) => {
+    if (!recognitionRef.current || !callIdRef.current) return;
+    setIsMutedState(muted);
+    wantsListeningRef.current = !muted;
+    if (muted) {
+      recognitionRef.current.stop();
+      return;
+    }
+    setError(null);
+    setStatus("listening");
+    try {
+      recognitionRef.current.start();
+    } catch {
+      // The recognizer may already be transitioning back to started.
+    }
+  }, []);
+
   useEffect(() => stop, [stop]);
 
-  return { status, error, isSupported, start, stop };
+  return { status, error, isSupported, isMuted, start, stop, setMuted };
 }

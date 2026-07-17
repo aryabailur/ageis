@@ -206,6 +206,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       patientDetails: {},
       conversationMessages: [],
       readyForDispatch: false,
+      dispatchReadyPayload: null,
     });
   },
 }));

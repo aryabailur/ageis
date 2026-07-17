@@ -7,6 +7,8 @@ import { ExtractionStrip } from "./components/ExtractionStrip";
 interface CallScreenProps {
   status: ConversationStatus;
   error: string | null;
+  isMuted: boolean;
+  onToggleMute: () => void;
   onEnd: () => void;
 }
 
@@ -147,14 +149,15 @@ function CallEndedScreen({ elapsed, onEnd }: { elapsed: number; onEnd: () => voi
   );
 }
 
-function ConnectionErrorScreen({ onEnd }: { onEnd: () => void }) {
+function ConnectionErrorScreen({ error, onEnd }: { error: string; onEnd: () => void }) {
+  const microphoneProblem = error.toLowerCase().includes("microphone");
   return (
     <div className="mobile-outcome-screen">
       <div className="mobile-outcome-icon mobile-outcome-icon-error" aria-hidden="true">
         ✕
       </div>
-      <h1 className="mobile-outcome-title">Connection lost</h1>
-      <p className="mobile-outcome-body">AEGIS is trying to reconnect automatically.</p>
+      <h1 className="mobile-outcome-title">{microphoneProblem ? "Microphone unavailable" : "Connection issue"}</h1>
+      <p className="mobile-outcome-body">{error}</p>
       <button className="mobile-outcome-btn" onClick={onEnd}>
         Try again
       </button>
@@ -162,12 +165,11 @@ function ConnectionErrorScreen({ onEnd }: { onEnd: () => void }) {
   );
 }
 
-export function CallScreen({ status, error, onEnd }: CallScreenProps) {
+export function CallScreen({ status, error, isMuted, onToggleMute, onEnd }: CallScreenProps) {
   const conversationMessages = useVoiceStore((s) => s.conversationMessages);
   const interimText = useVoiceStore((s) => s.interimText);
   const patientDetails = useVoiceStore((s) => s.patientDetails);
   const readyForDispatch = useVoiceStore((s) => s.readyForDispatch);
-  const [isMuted, setIsMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -190,7 +192,7 @@ export function CallScreen({ status, error, onEnd }: CallScreenProps) {
   }
 
   if (status === "error" && error) {
-    return <ConnectionErrorScreen onEnd={onEnd} />;
+    return <ConnectionErrorScreen error={error} onEnd={onEnd} />;
   }
 
   return (
@@ -218,7 +220,7 @@ export function CallScreen({ status, error, onEnd }: CallScreenProps) {
       <div className="mobile-call-controls">
         <button
           className={`mobile-control-btn ${isMuted ? "mobile-control-btn-active" : ""}`}
-          onClick={() => setIsMuted((m) => !m)}
+          onClick={onToggleMute}
           aria-label={isMuted ? "Unmute" : "Mute"}
         >
           {isMuted ? "Unmute" : "Mute"}

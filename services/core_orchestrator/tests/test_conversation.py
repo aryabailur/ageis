@@ -110,3 +110,49 @@ def test_end_removes_the_session():
 
 def test_end_for_unknown_call_id_is_a_noop_not_a_crash():
     conversation.end("call-never-existed")
+
+
+def test_quota_exhaustion_uses_deterministic_fallback_without_retrying_gemini(monkeypatch):
+    attempts = 0
+
+    def quota_failure(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+
+    monkeypatch.setattr(conversation, "_client", lambda: SimpleNamespace())
+    monkeypatch.setattr(conversation, "_call_gemini", quota_failure)
+
+    turn = conversation.next_turn("call-quota-failover", "severe chest pain")
+
+    assert attempts == 1
+    assert turn.reply_text == "Is the patient breathing normally?"
+    assert turn.extracted["emergency_type"] == "cardiac"
+    assert "conscious" not in turn.extracted
+    assert turn.extracted["severity"] == "serious"
+
+
+def test_deterministic_intake_completes_when_gemini_is_down(monkeypatch):
+    monkeypatch.setattr(conversation, "_client", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        conversation,
+        "_call_gemini",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("RESOURCE_EXHAUSTED quota")),
+    )
+    call_id = "call-local-fallback"
+
+    first = conversation.next_turn(call_id, "My father has severe chest pain")
+    assert first.reply_text == "Is the patient breathing normally?"
+    conversation.next_turn(call_id, "No")
+    conversation.next_turn(call_id, "Yes")
+    conversation.next_turn(call_id, "62")
+    final = conversation.next_turn(call_id, "Near Lilavati Hospital in Bandra")
+
+    assert final.is_complete is True
+    session = conversation.get(call_id)
+    assert session is not None
+    assert session.patient_details["emergency_type"] == "cardiac"
+    assert session.patient_details["breathing"] == "abnormal"
+    assert session.patient_details["conscious"] is True
+    assert session.patient_details["age"] == 62
+    assert session.patient_details["location_text"] == "Near Lilavati Hospital in Bandra"
