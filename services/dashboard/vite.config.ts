@@ -7,7 +7,7 @@ import react from "@vitejs/plugin-react";
 // (ngrok -> 5180) serve BOTH the app and the API to a phone -- getUserMedia
 // and SpeechRecognition require a secure context, so a phone can't use
 // plain http://<lan-ip>:5180 directly.
-const ORCHESTRATOR = "http://localhost:8090";
+const ORCHESTRATOR = "http://localhost:8000";
 
 export default defineConfig({
   plugins: [react()],

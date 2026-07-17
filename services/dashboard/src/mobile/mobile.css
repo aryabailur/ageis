@@ -32,19 +32,6 @@
   margin-top: 12vh;
 }
 
-.mobile-logo {
-  font-size: 36px;
-  color: var(--accent-primary);
-  width: 76px;
-  height: 76px;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .mobile-home-title {
   font-size: 26px;
   font-weight: 600;
@@ -66,12 +53,6 @@
   gap: 14px;
 }
 
-.mobile-home-warning {
-  color: var(--warning);
-  font-size: 13px;
-  max-width: 300px;
-}
-
 .mobile-start-btn {
   width: 100%;
   max-width: 340px;
@@ -89,19 +70,6 @@
 
 .mobile-start-btn:active {
   transform: scale(0.98);
-}
-
-.mobile-start-btn:disabled {
-  background: var(--surface-2);
-  border-color: var(--border-strong);
-  cursor: not-allowed;
-  color: var(--text-faint);
-}
-
-.mobile-home-footnote {
-  color: var(--text-faint);
-  font-size: 12px;
-  max-width: 300px;
 }
 
 /* --- Call screen --- */
@@ -169,25 +137,6 @@
   font-size: 12px;
   max-width: 320px;
   text-align: center;
-}
-
-/* --- Waveform --- */
-
-.mobile-waveform {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  height: 56px;
-  margin: 20px 0;
-}
-
-.mobile-waveform-bar {
-  width: 3px;
-  min-height: 6px;
-  border-radius: 1px;
-  background: var(--accent-primary);
-  transition: height 0.08s ease-out;
 }
 
 /* --- Transcript --- */
@@ -263,6 +212,7 @@
 }
 
 .mobile-end-btn {
+  position: relative;
   width: 64px;
   height: 64px;
   border-radius: 50%;
@@ -270,6 +220,471 @@
   background: var(--status-critical);
   color: #fff;
   font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.mobile-end-btn-label {
+  position: relative;
+  z-index: 1;
+}
+
+.mobile-end-btn-holding {
+  background: var(--status-critical);
+}
+
+.mobile-end-btn-progress-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: #fff;
+  animation: progress-ring var(--hold-to-end-ms, 1.5s) linear forwards;
+}
+
+/* ── AEGIS enhancements ────────────────────────────────────── */
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
+  }
+}
+
+@keyframes btn-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes flash-bubble {
+  0% {
+    background: var(--bg-tertiary);
+  }
+  100% {
+    background: var(--surface);
+  }
+}
+
+@keyframes progress-ring {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chip-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Home screen logo --- */
+
+.mobile-logo-wrap {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-logo-pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--status-critical);
+  animation: pulse-ring 2s infinite;
+}
+
+.mobile-logo {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: var(--status-critical);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Home screen trust lines --- */
+
+.mobile-home-trust-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.mobile-home-trust-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.mobile-home-trust-check {
+  color: var(--status-success);
+  font-weight: 700;
+}
+
+/* --- Home screen start button breathing + icon --- */
+
+.mobile-start-btn {
+  height: 60px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  animation: btn-breathe 2s infinite ease-in-out;
+}
+
+.mobile-start-btn-icon {
+  font-size: 16px;
+}
+
+.mobile-home-availability {
+  color: var(--text-faint);
+  font-size: 11px;
+  margin: 0;
+}
+
+/* --- Home screen privacy toggle --- */
+
+.mobile-privacy-toggle {
+  margin-top: 8px;
+}
+
+.mobile-privacy-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.mobile-privacy-toggle-body {
+  color: var(--text-faint);
+  font-size: 12px;
+  max-width: 300px;
+  margin: 6px auto 0;
+}
+
+/* --- Unsupported-browser fallback --- */
+
+.mobile-unsupported {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.mobile-unsupported-icon {
+  font-size: 48px;
+  color: var(--status-warning);
+}
+
+.mobile-unsupported-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.mobile-unsupported-body {
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 300px;
+  margin: 0;
+}
+
+.mobile-unsupported-copy-btn {
+  margin-top: 12px;
+  padding: 12px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- Call screen status icons --- */
+
+.mobile-status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 32px;
+  height: 32px;
+}
+
+.mobile-status-icon-connecting {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent-primary);
+  animation: spinner-rotate 0.9s linear infinite;
+}
+
+.mobile-status-icon-error {
+  color: var(--status-critical);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.mobile-mic-bar {
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--accent-primary);
+  animation: dot-bounce 1s ease-in-out infinite;
+}
+
+.mobile-mic-bar:nth-child(2) {
+  animation-delay: 0.15s;
+  height: 20px;
+}
+
+.mobile-mic-bar:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.mobile-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-warning);
+  animation: dot-bounce 1s ease-in-out infinite;
+}
+
+.mobile-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.mobile-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.mobile-sound-arc {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--status-success);
+  animation: dot-bounce 0.8s ease-in-out infinite;
+}
+
+.mobile-sound-arc-1 {
+  height: 10px;
+}
+
+.mobile-sound-arc-2 {
+  height: 20px;
+  animation-delay: 0.1s;
+}
+
+.mobile-sound-arc-3 {
+  height: 14px;
+  animation-delay: 0.2s;
+}
+
+/* --- Agent guidance banner --- */
+
+.mobile-guidance-banner {
+  width: 100%;
+  max-width: 340px;
+  margin: 10px auto 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px 16px;
+  font-size: 14px;
+  text-align: center;
+  color: var(--text);
+  transition: opacity 150ms ease-out;
+}
+
+.mobile-guidance-banner-success {
+  color: var(--status-success);
+  border-color: var(--success-border);
+  background: var(--success-bg);
+}
+
+/* --- Extraction strip --- */
+
+.mobile-extraction-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 4px;
+  margin: 4px 0;
+}
+
+.mobile-chip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mobile-chip-filled {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.mobile-chip-enter {
+  animation: chip-enter 200ms ease-out;
+}
+
+.mobile-chip-icon {
+  font-size: 13px;
+}
+
+/* --- Transcript bubble labels + flash --- */
+
+.mobile-bubble-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 82%;
+}
+
+.mobile-bubble-wrap-ai {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.mobile-bubble-wrap-patient {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.mobile-bubble-label {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+
+.mobile-bubble-flash {
+  animation: flash-bubble 300ms ease-out;
+}
+
+/* --- Outcome screens (ended / error) --- */
+
+.mobile-outcome-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.mobile-outcome-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+
+.mobile-outcome-icon-success {
+  background: var(--success-bg);
+  color: var(--status-success);
+}
+
+.mobile-outcome-icon-error {
+  background: var(--error-bg);
+  color: var(--status-critical);
+}
+
+.mobile-outcome-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.mobile-outcome-body {
+  color: var(--text-muted);
+  font-size: 14px;
+  max-width: 300px;
+  margin: 0;
+}
+
+.mobile-outcome-duration {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  font-size: 13px;
+  margin: 0;
+}
+
+.mobile-outcome-btn {
+  margin-top: 8px;
+  padding: 14px 32px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
 }

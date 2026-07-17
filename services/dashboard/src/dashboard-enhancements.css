@@ -1,0 +1,254 @@
+/* Desktop-dashboard-only additions layered on top of theme.css /
+   index.css -- never edits index.css directly (see the master prompt's
+   ground rules). Agent chat panel + ConversationTranscriptCard extras. */
+
+@keyframes agent-chat-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes live-pill-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* --- Agent Chat Panel --- */
+
+.agent-chat-panel {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 340px;
+  max-height: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  z-index: 100;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.agent-chat-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-chat-panel-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.agent-chat-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.agent-chat-dot-active {
+  background: var(--status-success);
+  animation: agent-chat-pulse 2s infinite;
+}
+
+.agent-chat-unread-badge {
+  background: var(--status-critical);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+.agent-chat-panel-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agent-chat-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-chat-summary-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-chat-summary-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.agent-chat-summary-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chat-transcript {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px;
+}
+
+.agent-chat-transcript-hint {
+  margin: auto;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.agent-chat-bubble {
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.agent-chat-bubble-ai {
+  align-self: flex-start;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+}
+
+.agent-chat-bubble-patient {
+  align-self: flex-end;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.agent-chat-bubble-interim {
+  opacity: 0.55;
+}
+
+.agent-chat-guidance {
+  padding: 10px 14px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.agent-chat-guidance-warning {
+  color: var(--status-warning);
+}
+
+.agent-chat-guidance-success {
+  color: var(--status-success);
+}
+
+/* --- ConversationTranscriptCard additions --- */
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.conversation-card-pill-live {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--status-success);
+  animation: live-pill-pulse 2s infinite;
+}
+
+.conversation-card-pill-ended {
+  background: var(--bg-tertiary);
+  border-color: var(--border-strong);
+  color: var(--text-faint);
+}
+
+.conversation-card-copy-btn {
+  position: relative;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.conversation-card-copy-tooltip {
+  position: absolute;
+  top: -26px;
+  right: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.conversation-card-confidence {
+  margin-top: 10px;
+}
+
+.conversation-card-confidence-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.conversation-card-confidence-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.conversation-card-confidence-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width var(--dur-base) var(--ease-out);
+}

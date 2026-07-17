@@ -23,8 +23,11 @@ class ConnectionManager:
         self._connections.discard(websocket)
 
     async def broadcast(self, event: dict) -> None:
+        # Iterate a snapshot, not the live set -- a connect()/disconnect()
+        # from another coroutine while this loop awaits send_json() would
+        # otherwise raise "Set changed size during iteration".
         dead: list[WebSocket] = []
-        for connection in self._connections:
+        for connection in list(self._connections):
             try:
                 await connection.send_json(event)
             except Exception:

@@ -4,6 +4,7 @@ import App from "./App";
 import { MobileApp } from "./mobile/MobileApp";
 import "./theme.css";
 import "./index.css";
+import "./dashboard-enhancements.css";
 
 // The mobile AI emergency voice assistant lives at /call, entirely
 // separate from the dashboard's App tree -- a plain client-side path

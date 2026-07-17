@@ -22,6 +22,7 @@ import { TimingBreakdown } from "./components/TimingBreakdown";
 import { ComplexityPanel } from "./components/ComplexityPanel";
 import { SurvivalMeter } from "./components/SurvivalMeter";
 import { BaselineComparison } from "./components/BaselineComparison";
+import { AgentChatPanel } from "./components/AgentChatPanel";
 
 // Falls back to the seeded demo location (Bandra West, Mumbai) only when
 // the browser has no real position yet -- e.g. geolocation permission not
@@ -235,6 +236,8 @@ export default function App() {
           )}
         </div>
       </div>
+
+      <AgentChatPanel />
     </div>
   );
 }

@@ -16,6 +16,7 @@ non-persistent, fine for this demo service.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -23,6 +24,8 @@ from typing import Any
 
 from google import genai
 from google.genai import types as genai_types
+
+logger = logging.getLogger("aegis.voice.conversation")
 
 MODEL = "gemini-3.5-flash"
 
@@ -174,10 +177,39 @@ def _parse_turn(raw_text: str) -> ConversationTurn:
     )
 
 
+GEMINI_RETRY_ATTEMPTS = 3
+GEMINI_RETRY_DELAY_S = 1.0
+
+_FALLBACK_REPLY = "Sorry, I'm having trouble hearing you clearly. Could you say that again?"
+
+
+def _call_gemini(client: genai.Client, contents: list[genai_types.Content]) -> str:
+    """One attempt at the Gemini call, isolated so next_turn can retry it.
+    Any failure (rate limit, 5xx, network) propagates -- retry/fallback
+    behavior lives in next_turn, not here."""
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=_RESPONSE_SCHEMA,
+            max_output_tokens=1024,
+        ),
+    )
+    return response.text or "{}"
+
+
 def next_turn(call_id: str, latest_user_utterance: str) -> ConversationTurn:
     """Advance the conversation by one turn: send the caller's latest final
     transcript chunk to the model, update session state, and return what the
-    AI should say next plus the newly-merged patient extraction."""
+    AI should say next plus the newly-merged patient extraction.
+
+    Design Law 4 applies here same as every other external call in this
+    system: a transient Gemini failure (rate limit, 503 capacity) gets one
+    short retry, and if that also fails, the caller gets a safe "please
+    repeat" turn instead of a dropped call -- never a crash mid-conversation.
+    """
     session = get_or_create(call_id)
     session.messages.append({"role": "user", "content": latest_user_utterance})
 
@@ -194,17 +226,26 @@ def next_turn(call_id: str, latest_user_utterance: str) -> ConversationTurn:
         for m in session.messages
     ]
 
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=contents,
-        config=genai_types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_schema=_RESPONSE_SCHEMA,
-            max_output_tokens=1024,
-        ),
-    )
-    raw_text = response.text or "{}"
+    raw_text: str | None = None
+    for attempt in range(GEMINI_RETRY_ATTEMPTS):
+        try:
+            raw_text = _call_gemini(client, contents)
+            break
+        except Exception as exc:
+            logger.warning(
+                "Gemini call failed (attempt %d/%d) for call %s: %s",
+                attempt + 1, GEMINI_RETRY_ATTEMPTS, call_id, exc,
+            )
+            if attempt == GEMINI_RETRY_ATTEMPTS - 1:
+                break
+            time.sleep(GEMINI_RETRY_DELAY_S)
+
+    if raw_text is None:
+        # Every attempt failed -- don't merge a user turn into history with
+        # no assistant reply to match it (would desync the user/model
+        # alternation Gemini expects next turn), and don't mark anything
+        # extracted/complete from a call that never actually ran.
+        return ConversationTurn(reply_text=_FALLBACK_REPLY, extracted={}, is_complete=False)
 
     turn = _parse_turn(raw_text)
 

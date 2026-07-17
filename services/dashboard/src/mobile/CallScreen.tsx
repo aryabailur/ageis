@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVoiceStore } from "../store/voiceStore";
 import type { ConversationStatus } from "../hooks/useConversationOrchestrator";
-import { Waveform } from "./components/Waveform";
 import { TranscriptStream } from "./components/TranscriptStream";
+import { ExtractionStrip } from "./components/ExtractionStrip";
 
 interface CallScreenProps {
   status: ConversationStatus;
   error: string | null;
-  audioLevel: number | null;
   onEnd: () => void;
 }
 
@@ -27,9 +26,147 @@ const STATUS_LABEL: Record<ConversationStatus, string> = {
   error: "Connection issue",
 };
 
-export function CallScreen({ status, error, audioLevel, onEnd }: CallScreenProps) {
+function StatusIcon({ status }: { status: ConversationStatus }) {
+  if (status === "listening") {
+    return (
+      <div className="mobile-status-icon mobile-status-icon-mic" aria-hidden="true">
+        <span className="mobile-mic-bar" />
+        <span className="mobile-mic-bar" />
+        <span className="mobile-mic-bar" />
+      </div>
+    );
+  }
+  if (status === "thinking") {
+    return (
+      <div className="mobile-status-icon mobile-status-icon-dots" aria-hidden="true">
+        <span className="mobile-dot" />
+        <span className="mobile-dot" />
+        <span className="mobile-dot" />
+      </div>
+    );
+  }
+  if (status === "speaking") {
+    return (
+      <div className="mobile-status-icon mobile-status-icon-speaking" aria-hidden="true">
+        <span className="mobile-sound-arc mobile-sound-arc-1" />
+        <span className="mobile-sound-arc mobile-sound-arc-2" />
+        <span className="mobile-sound-arc mobile-sound-arc-3" />
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <div className="mobile-status-icon mobile-status-icon-error" aria-hidden="true">
+        ✕
+      </div>
+    );
+  }
+  // idle / connecting
+  return <div className="mobile-status-icon mobile-status-icon-connecting" aria-hidden="true" />;
+}
+
+/** What AEGIS is doing right now / waiting for, in plain language --
+ * derived from the same status prop driving the avatar plus voiceStore's
+ * conversation state, never a second source of truth. */
+function guidanceBannerText(
+  status: ConversationStatus,
+  messageCount: number,
+  readyForDispatch: boolean,
+): { text: string; tone: "neutral" | "success" } {
+  if (readyForDispatch) {
+    return { text: "✓ Help is being dispatched — stay on the line", tone: "success" };
+  }
+  if (status === "connecting" || status === "idle") {
+    return { text: "Connecting to AEGIS dispatch…", tone: "neutral" };
+  }
+  if (status === "listening" && messageCount === 0) {
+    return { text: "Go ahead — describe the emergency", tone: "neutral" };
+  }
+  if (status === "listening") {
+    return { text: "AEGIS heard you — keep going or wait for the next question", tone: "neutral" };
+  }
+  if (status === "thinking") {
+    return { text: "AEGIS is processing your response…", tone: "neutral" };
+  }
+  if (status === "speaking") {
+    return { text: "Listen to AEGIS — then respond when ready", tone: "neutral" };
+  }
+  return { text: "", tone: "neutral" };
+}
+
+const HOLD_TO_END_MS = 1500;
+
+function EndCallButton({ onEnd }: { onEnd: () => void }) {
+  const [holding, setHolding] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function startHold() {
+    setHolding(true);
+    timerRef.current = setTimeout(() => {
+      onEnd();
+    }, HOLD_TO_END_MS);
+  }
+
+  function cancelHold() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setHolding(false);
+  }
+
+  useEffect(() => () => cancelHold(), []);
+
+  return (
+    <button
+      className={`mobile-end-btn ${holding ? "mobile-end-btn-holding" : ""}`}
+      onPointerDown={startHold}
+      onPointerUp={cancelHold}
+      onPointerLeave={cancelHold}
+      aria-label="Hold to end call"
+    >
+      {holding && <span className="mobile-end-btn-progress-ring" aria-hidden="true" />}
+      <span className="mobile-end-btn-label">{holding ? "Hold to end" : "End Call"}</span>
+    </button>
+  );
+}
+
+function CallEndedScreen({ elapsed, onEnd }: { elapsed: number; onEnd: () => void }) {
+  return (
+    <div className="mobile-outcome-screen">
+      <div className="mobile-outcome-icon mobile-outcome-icon-success" aria-hidden="true">
+        ✓
+      </div>
+      <h1 className="mobile-outcome-title">Help is on the way</h1>
+      <p className="mobile-outcome-body">
+        Stay calm and stay on the line. Responders have been notified. Keep the patient still.
+      </p>
+      <p className="mobile-outcome-duration">Call duration: {formatDuration(elapsed)}</p>
+      <button className="mobile-outcome-btn" onClick={onEnd}>
+        Done
+      </button>
+    </div>
+  );
+}
+
+function ConnectionErrorScreen({ onEnd }: { onEnd: () => void }) {
+  return (
+    <div className="mobile-outcome-screen">
+      <div className="mobile-outcome-icon mobile-outcome-icon-error" aria-hidden="true">
+        ✕
+      </div>
+      <h1 className="mobile-outcome-title">Connection lost</h1>
+      <p className="mobile-outcome-body">AEGIS is trying to reconnect automatically.</p>
+      <button className="mobile-outcome-btn" onClick={onEnd}>
+        Try again
+      </button>
+    </div>
+  );
+}
+
+export function CallScreen({ status, error, onEnd }: CallScreenProps) {
   const conversationMessages = useVoiceStore((s) => s.conversationMessages);
   const interimText = useVoiceStore((s) => s.interimText);
+  const patientDetails = useVoiceStore((s) => s.patientDetails);
+  const readyForDispatch = useVoiceStore((s) => s.readyForDispatch);
   const [isMuted, setIsMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
@@ -39,8 +176,6 @@ export function CallScreen({ status, error, audioLevel, onEnd }: CallScreenProps
     return () => clearInterval(timer);
   }, []);
 
-  const isActive = status === "listening" || status === "thinking" || status === "speaking";
-
   const pulseClass = useMemo(() => {
     if (status === "speaking") return "mobile-avatar-speaking";
     if (status === "listening") return "mobile-avatar-listening";
@@ -48,17 +183,33 @@ export function CallScreen({ status, error, audioLevel, onEnd }: CallScreenProps
     return "";
   }, [status]);
 
+  const banner = guidanceBannerText(status, conversationMessages.length, readyForDispatch);
+
+  if (status === "ended") {
+    return <CallEndedScreen elapsed={elapsed} onEnd={onEnd} />;
+  }
+
+  if (status === "error" && error) {
+    return <ConnectionErrorScreen onEnd={onEnd} />;
+  }
+
   return (
     <div className="mobile-call">
       <div className="mobile-call-header">
         <div className={`mobile-avatar ${pulseClass}`} aria-hidden="true">
-          ▲
+          <StatusIcon status={status} />
         </div>
         <div className="mobile-call-status">{STATUS_LABEL[status]}</div>
         <div className="mobile-call-timer">{formatDuration(elapsed)}</div>
       </div>
 
-      <Waveform level={audioLevel} active={isActive} />
+      {banner.text && (
+        <div className={`mobile-guidance-banner ${banner.tone === "success" ? "mobile-guidance-banner-success" : ""}`}>
+          {banner.text}
+        </div>
+      )}
+
+      <ExtractionStrip patientDetails={patientDetails} />
 
       {error && <div className="mobile-call-error">{error}</div>}
 
@@ -72,9 +223,7 @@ export function CallScreen({ status, error, audioLevel, onEnd }: CallScreenProps
         >
           {isMuted ? "Unmute" : "Mute"}
         </button>
-        <button className="mobile-end-btn" onClick={onEnd} aria-label="End call">
-          End Call
-        </button>
+        <EndCallButton onEnd={onEnd} />
         <button
           className="mobile-control-btn"
           onClick={() => window.speechSynthesis?.cancel()}

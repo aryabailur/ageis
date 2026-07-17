@@ -3,6 +3,13 @@ import { useVoiceStore } from "../store/voiceStore";
 
 const ORCHESTRATOR_URL = import.meta.env.VITE_ORCHESTRATOR_URL ?? "http://localhost:8000";
 
+// The AI's reply arrives over a separate WebSocket (voiceStore's
+// /voice/live), not as the direct response to postTranscript's fetch --
+// if that socket drops/reconnects at exactly the wrong moment, the
+// broadcast is lost with nothing to retry it, and "thinking" would
+// otherwise hang forever with no visible signal. This bounds the wait.
+const THINKING_TIMEOUT_MS = 15_000;
+
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
@@ -45,6 +52,14 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
   const wantsListeningRef = useRef(false);
   const speakingRef = useRef(false);
   const lastAiTextRef = useRef<string>("");
+  const thinkingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearThinkingTimeout = useCallback(() => {
+    if (thinkingTimeoutRef.current) {
+      clearTimeout(thinkingTimeoutRef.current);
+      thinkingTimeoutRef.current = null;
+    }
+  }, []);
 
   const Ctor = getSpeechRecognitionCtor();
   const isSupported = Ctor !== null && "speechSynthesis" in window;
@@ -99,40 +114,62 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       const latest = messages[messages.length - 1];
       if (latest?.role === "ai" && latest.text !== lastAiTextRef.current) {
         lastAiTextRef.current = latest.text;
+        clearThinkingTimeout();
         speak(latest.text);
       }
     });
     return unsubscribe;
-  }, [speak]);
+  }, [speak, clearThinkingTimeout]);
 
-  const postTranscript = useCallback(async (text: string) => {
-    if (!callIdRef.current || !text.trim()) return;
-    setStatus("thinking");
-    try {
-      const geo = await new Promise<GeolocationPosition | null>((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve(pos),
-          () => resolve(null),
-          { timeout: 3000 },
-        );
-      });
-      await fetch(`${ORCHESTRATOR_URL}/voice/browser/transcript`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          call_id: callIdRef.current,
-          text: text.trim(),
-          is_final: true,
-          conversation_mode: true,
-          caller_lat: geo?.coords.latitude ?? null,
-          caller_lng: geo?.coords.longitude ?? null,
-        }),
-      });
-    } catch {
-      setError("Lost connection to AEGIS. Trying to keep listening.");
-    }
-  }, []);
+  const postTranscript = useCallback(
+    async (text: string) => {
+      if (!callIdRef.current || !text.trim()) return;
+      setStatus("thinking");
+      clearThinkingTimeout();
+      // The AI's reply arrives asynchronously over voiceStore's /voice/live
+      // socket, not as this fetch's response -- if that broadcast never
+      // arrives (a dropped/reconnecting socket at the wrong moment), this
+      // is what stops "thinking" from hanging forever with no recovery.
+      thinkingTimeoutRef.current = setTimeout(() => {
+        if (wantsListeningRef.current && !speakingRef.current) {
+          setError("AEGIS didn't reply in time. Please try again.");
+          setStatus("listening");
+          try {
+            recognitionRef.current?.start();
+          } catch {
+            // already started -- ignore
+          }
+        }
+      }, THINKING_TIMEOUT_MS);
+
+      try {
+        const geo = await new Promise<GeolocationPosition | null>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (pos) => resolve(pos),
+            () => resolve(null),
+            { timeout: 3000 },
+          );
+        });
+        await fetch(`${ORCHESTRATOR_URL}/voice/browser/transcript`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            call_id: callIdRef.current,
+            text: text.trim(),
+            is_final: true,
+            conversation_mode: true,
+            caller_lat: geo?.coords.latitude ?? null,
+            caller_lng: geo?.coords.longitude ?? null,
+          }),
+        });
+      } catch {
+        clearThinkingTimeout();
+        setError("Lost connection to AEGIS. Trying to keep listening.");
+      }
+    },
+    [clearThinkingTimeout],
+  );
 
   const start = useCallback(
     async (callId: string) => {
@@ -160,6 +197,11 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       };
 
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        // Recoverable types (no-speech/network/aborted) are otherwise
+        // completely silent to the user -- logging every error, even
+        // recoverable ones, is what let us tell a real stuck-listening
+        // bug apart from normal silence during on-device debugging.
+        console.warn("[AEGIS] SpeechRecognition error:", event.error, event.message);
         const recoverable = event.error === "no-speech" || event.error === "network" || event.error === "aborted";
         if (!recoverable) {
           setError(`Microphone error: ${event.error}. Trying to recover.`);
@@ -194,6 +236,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
 
   const stop = useCallback(() => {
     wantsListeningRef.current = false;
+    clearThinkingTimeout();
     window.speechSynthesis.cancel();
     recognitionRef.current?.stop();
     recognitionRef.current = null;
@@ -202,7 +245,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     }
     callIdRef.current = null;
     setStatus("ended");
-  }, []);
+  }, [clearThinkingTimeout]);
 
   useEffect(() => stop, [stop]);
 
