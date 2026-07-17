@@ -116,3 +116,70 @@ export async function setHospitalStatus(hospitalId: string, status: "OPEN" | "DI
   }
   return response.json();
 }
+
+// --- Dispatch History log --------------------------------------------------
+
+/** Shape returned by GET /api/logs (list endpoint — no snapshot). */
+export interface LogListItem {
+  id: number;
+  call_id: string;
+  status: string;
+  priority: string | null;
+  caller_lat: number | null;
+  caller_lng: number | null;
+  completed_at: string; // ISO-8601 timestamp string
+}
+
+export interface LogListResponse {
+  items: LogListItem[];
+  count: number;
+  offset: number;
+  limit: number;
+}
+
+/** Shape returned by GET /api/logs/{call_id} and GET /api/logs/row/{id}. */
+export interface LogDetail extends LogListItem {
+  state_snapshot: DispatchState;
+}
+
+export interface LogFilters {
+  status?: string;
+  priority?: string;
+  from_dt?: string;
+  to_dt?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchLogs(filters: LogFilters = {}): Promise<LogListResponse> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.from_dt) params.set("from_dt", filters.from_dt);
+  if (filters.to_dt) params.set("to_dt", filters.to_dt);
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
+  const url = `${ORCHESTRATOR_URL}/api/logs${params.size ? "?" + params.toString() : ""}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`log list fetch failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchLog(callId: string): Promise<LogDetail> {
+  const response = await fetch(`${ORCHESTRATOR_URL}/api/logs/${encodeURIComponent(callId)}`);
+  if (!response.ok) {
+    throw new Error(`log fetch failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function fetchLogById(logId: number): Promise<LogDetail> {
+  const response = await fetch(`${ORCHESTRATOR_URL}/api/logs/row/${logId}`);
+  if (!response.ok) {
+    throw new Error(`log fetch by id failed: ${response.status}`);
+  }
+  return response.json();
+}
+

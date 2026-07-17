@@ -22,6 +22,7 @@ import { TimingBreakdown } from "./components/TimingBreakdown";
 import { ComplexityPanel } from "./components/ComplexityPanel";
 import { SurvivalMeter } from "./components/SurvivalMeter";
 import { BaselineComparison } from "./components/BaselineComparison";
+import { HistoryPanel } from "./components/HistoryPanel";
 
 // Falls back to the seeded demo location (Bandra West, Mumbai) only when
 // the browser has no real position yet -- e.g. geolocation permission not
@@ -43,6 +44,10 @@ export default function App() {
     applyReview,
     loadFleet,
   } = useDispatchStore();
+
+  // Tab: "live" shows the dispatch command center, "history" shows logged runs.
+  // Same minimal view-toggle pattern used everywhere else in this file.
+  const [activeTab, setActiveTab] = useState<"live" | "history">("live");
 
   const device = useDeviceLocation();
   const callerLat = device.lat ?? FALLBACK_LAT;
@@ -135,6 +140,34 @@ export default function App() {
   return (
     <div className="app">
       <CommandHeader fleet={fleet} current={current} callsHandled={callsHandled} callsAutonomous={callsAutonomous} />
+
+      {/* Tab bar — minimal toggle, no router */}
+      <div className="app-tab-bar">
+        <button
+          id="tab-live"
+          className={`app-tab${activeTab === "live" ? " app-tab-active" : ""}`}
+          onClick={() => setActiveTab("live")}
+          aria-selected={activeTab === "live"}
+          role="tab"
+        >
+          Live dispatch
+        </button>
+        <button
+          id="tab-history"
+          className={`app-tab${activeTab === "history" ? " app-tab-active" : ""}`}
+          onClick={() => setActiveTab("history")}
+          aria-selected={activeTab === "history"}
+          role="tab"
+        >
+          History
+        </button>
+      </div>
+
+      {activeTab === "history" ? (
+        <div className="history-tab-view">
+          <HistoryPanel />
+        </div>
+      ) : (
 
       <div className="app-body">
         {/* --- LEFT: Emergency Summary --- */}
@@ -235,6 +268,7 @@ export default function App() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

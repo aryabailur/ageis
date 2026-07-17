@@ -6,9 +6,10 @@ from Python (see tests/) without any HTTP layer at all.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +26,7 @@ from aegis_contracts import (
 )
 from aegis_contracts.supabase_client import get_client
 
-from . import review_store
+from . import dispatch_log, review_store
 from .graph import compiled_app, resume_from_reservation_graph, resume_from_resources_graph
 from .mcp_client import call_tool
 from .run_batch import run_batch
@@ -119,7 +120,9 @@ async def dispatch(request: DispatchRequest):
         caller_lng=request.caller_lng,
     )
     result = await _graph_app.ainvoke(initial)
-    return DispatchState.model_validate(result).model_dump(mode="json")
+    state = DispatchState.model_validate(result)
+    asyncio.create_task(dispatch_log.log_dispatch(state))
+    return state.model_dump(mode="json")
 
 
 @app.post("/dispatch/stream")
@@ -139,14 +142,20 @@ async def dispatch_stream(request: DispatchRequest):
             caller_lat=request.caller_lat,
             caller_lng=request.caller_lng,
         )
-        async for chunk in _graph_app.astream(accumulated, stream_mode="updates"):
-            for node_name, partial in chunk.items():
-                accumulated = _merge_update(accumulated, partial)
-                payload = {"node": node_name, "state": accumulated.model_dump(mode="json")}
-                yield f"data: {json.dumps(payload)}\n\n"
+        try:
+            async for chunk in _graph_app.astream(accumulated, stream_mode="updates"):
+                for node_name, partial in chunk.items():
+                    accumulated = _merge_update(accumulated, partial)
+                    payload = {"node": node_name, "state": accumulated.model_dump(mode="json")}
+                    yield f"data: {json.dumps(payload)}\n\n"
 
-        if accumulated.status == DispatchStatus.AWAITING_REVIEW:
-            review_store.save(accumulated)
+            if accumulated.status == DispatchStatus.AWAITING_REVIEW:
+                review_store.save(accumulated)
+        finally:
+            # Always log, including AWAITING_REVIEW calls paused for human
+            # review -- the snapshot captures the full state at the point of
+            # pause, which is the most useful thing to record for replay.
+            asyncio.create_task(dispatch_log.log_dispatch(accumulated))
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -186,7 +195,12 @@ async def dispatch_batch(requests: list[DispatchRequest]):
     under real concurrency, not just one call at a time."""
     incidents = [r.model_dump() for r in requests]
     results = await run_batch(incidents)
-    return [DispatchState.model_validate(r).model_dump(mode="json") for r in results]
+    # Validate successes and log each one fire-and-forget; None results
+    # (calls that raised inside run_batch) have no meaningful state to log.
+    states = [DispatchState.model_validate(r) for r in results if r is not None]
+    for s in states:
+        asyncio.create_task(dispatch_log.log_dispatch(s))
+    return [s.model_dump(mode="json") for s in states]
 
 
 @app.get("/baseline")
@@ -231,6 +245,103 @@ async def set_hospital_status(hospital_id: str, request: HospitalStatusRequest):
     )
     if not result.data:
         raise HTTPException(status_code=404, detail=f"Unknown hospital_id: {hospital_id}")
+    return result.data[0]
+
+
+# --- dispatch log read API -----------------------------------------------
+#
+# PII NOTE: these endpoints return raw_transcript, caller_lat, caller_lng,
+# and any caller phone number captured during a voice session.  They are
+# unauthenticated, consistent with the rest of the system's trust model
+# (private network / trusted operator assumed).  Do not expose publicly
+# before adding authentication.
+
+
+class _LogRow(dict):
+    """Thin alias used only for type annotation clarity below."""
+
+
+@app.get("/api/logs")
+async def list_logs(
+    status: str | None = None,
+    priority: str | None = None,
+    from_dt: str | None = None,
+    to_dt: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Paginated list of dispatch log entries with optional server-side
+    filters.  Does NOT include state_snapshot to keep response payloads
+    small; use GET /api/logs/{call_id} or /api/logs/{log_id}/snapshot for
+    the full run snapshot.
+
+    Query params
+    ------------
+    status   : DispatchStatus string (DISPATCHED, COMPLETED, FAILED, …)
+    priority : Priority string (P1, P2, P3, UNKNOWN)
+    from_dt  : ISO-8601 lower bound on completed_at (inclusive)
+    to_dt    : ISO-8601 upper bound on completed_at (inclusive)
+    limit    : max rows to return (default 50, capped at 200)
+    offset   : pagination offset (default 0)
+    """
+    limit = min(limit, 200)
+    client = get_client()
+    query = client.table("dispatch_logs").select(
+        "id, call_id, status, priority, caller_lat, caller_lng, completed_at"
+    )
+    if status:
+        query = query.eq("status", status)
+    if priority:
+        query = query.eq("priority", priority)
+    if from_dt:
+        query = query.gte("completed_at", from_dt)
+    if to_dt:
+        query = query.lte("completed_at", to_dt)
+    result = query.order("completed_at", desc=True).range(offset, offset + limit - 1).execute()
+    # Supabase doesn't expose total count cheaply without a second query;
+    # return the count of rows in this page as a minimum useful signal.
+    return {"items": result.data, "count": len(result.data), "offset": offset, "limit": limit}
+
+
+@app.get("/api/logs/{call_id}")
+async def get_log_by_call_id(call_id: str) -> dict[str, Any]:
+    """Returns the most-recent dispatch log entry for *call_id*, including
+    the full state_snapshot (the complete DispatchState at run end).  Use
+    this for the dashboard's History replay drawer.
+
+    If a call was resumed after AWAITING_REVIEW, both runs are stored; this
+    endpoint returns the most recent one (highest completed_at).  Use
+    GET /api/logs/{log_id}/snapshot to retrieve a specific row by numeric id.
+    """
+    result = (
+        get_client()
+        .table("dispatch_logs")
+        .select("*")
+        .eq("call_id", call_id)
+        .order("completed_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"No log entry for call_id={call_id}")
+    return result.data[0]
+
+
+@app.get("/api/logs/row/{log_id}")
+async def get_log_by_id(log_id: int) -> dict[str, Any]:
+    """Returns a single dispatch log entry by its numeric primary-key *log_id*,
+    including the full state_snapshot.  Useful when multiple entries share
+    the same call_id (e.g. AWAITING_REVIEW pause + post-review completion).
+    """
+    result = (
+        get_client()
+        .table("dispatch_logs")
+        .select("*")
+        .eq("id", log_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"No log entry with id={log_id}")
     return result.data[0]
 
 
