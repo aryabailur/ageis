@@ -145,7 +145,7 @@ export function CityMap({ fleet, current }: Props) {
     <div className="map-shell">
       {!GOOGLE_MAPS_KEY ? (
         <div className="map-token-missing">
-          Set <code>VITE_GOOGLE_MAPS_KEY</code> in .env.local to enable the live map.
+          Set <code>VITE_GOOGLE_MAPS_KEY</code> in the repo-level <code>.env</code>, then restart the dashboard.
         </div>
       ) : loadError ? (
         <div className="map-token-missing">Google Maps failed to load — check the API key and enabled APIs.</div>

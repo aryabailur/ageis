@@ -10,6 +10,10 @@ import react from "@vitejs/plugin-react";
 const ORCHESTRATOR = "http://localhost:8000";
 
 export default defineConfig({
+  // The shared repo-level .env contains both backend credentials and the
+  // dashboard's VITE_* values. Vite still exposes only VITE_-prefixed
+  // variables to browser code, so backend secrets remain server-only.
+  envDir: "../..",
   plugins: [react()],
   server: {
     host: "0.0.0.0",

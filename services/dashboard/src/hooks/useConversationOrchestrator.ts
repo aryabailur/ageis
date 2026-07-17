@@ -81,6 +81,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
   const accumulatedTranscriptRef = useRef<string>("");
   const postTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProcessedIndexRef = useRef<number>(-1);
+  const recognitionRestartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearThinkingTimeout = useCallback(() => {
     if (thinkingTimeoutRef.current) {
@@ -89,6 +90,43 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     }
   }, []);
 
+  const clearRecognitionRestart = useCallback(() => {
+    if (recognitionRestartTimeoutRef.current) {
+      clearTimeout(recognitionRestartTimeoutRef.current);
+      recognitionRestartTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleRecognitionRestart = useCallback(
+    (initialDelayMs = 120) => {
+      clearRecognitionRestart();
+      let attemptsRemaining = 4;
+
+      const attemptStart = () => {
+        recognitionRestartTimeoutRef.current = null;
+        const recognition = recognitionRef.current;
+        if (!recognition || !callIdRef.current || !wantsListeningRef.current || speakingRef.current) return;
+
+        // Chrome starts a fresh result list after every stop/start cycle.
+        // Keeping the previous session's index causes all later results at
+        // index 0/1 to be silently ignored after two or three AI turns.
+        lastProcessedIndexRef.current = -1;
+        try {
+          recognition.start();
+          setStatus("listening");
+        } catch {
+          attemptsRemaining -= 1;
+          if (attemptsRemaining > 0 && wantsListeningRef.current && !speakingRef.current) {
+            recognitionRestartTimeoutRef.current = setTimeout(attemptStart, 180);
+          }
+        }
+      };
+
+      recognitionRestartTimeoutRef.current = setTimeout(attemptStart, initialDelayMs);
+    },
+    [clearRecognitionRestart],
+  );
+
   const Ctor = getSpeechRecognitionCtor();
   const isSupported = Ctor !== null && "speechSynthesis" in window;
 
@@ -96,6 +134,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     if (!text.trim()) return;
     speakingRef.current = true;
     setStatus("speaking");
+    clearRecognitionRestart();
     recognitionRef.current?.stop();
 
     const utterance = new SpeechSynthesisUtterance(text);
@@ -117,12 +156,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         callIdRef.current = null;
         setStatus("ended");
       } else if (wantsListeningRef.current) {
-        setStatus("listening");
-        try {
-          recognitionRef.current?.start();
-        } catch {
-          // already started -- ignore
-        }
+        scheduleRecognitionRestart();
       }
     };
     utterance.onerror = () => {
@@ -139,17 +173,12 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         callIdRef.current = null;
         setStatus("ended");
       } else if (wantsListeningRef.current) {
-        setStatus("listening");
-        try {
-          recognitionRef.current?.start();
-        } catch {
-          // ignore
-        }
+        scheduleRecognitionRestart();
       }
     };
 
     window.speechSynthesis.speak(utterance);
-  }, [clearThinkingTimeout]);
+  }, [clearThinkingTimeout, clearRecognitionRestart, scheduleRecognitionRestart]);
 
   // The AI's spoken reply arrives as a "transcript_update" broadcast with
   // source: "ai" over the SAME /voice/live socket voiceStore already
@@ -183,12 +212,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       thinkingTimeoutRef.current = setTimeout(() => {
         if (wantsListeningRef.current && !speakingRef.current) {
           setError("AEGIS didn't reply in time. Please try again.");
-          setStatus("listening");
-          try {
-            recognitionRef.current?.start();
-          } catch {
-            // already started -- ignore
-          }
+          scheduleRecognitionRestart();
         }
       }, THINKING_TIMEOUT_MS);
 
@@ -244,7 +268,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         setError("Lost connection to AEGIS. Trying to keep listening.");
       }
     },
-    [clearThinkingTimeout],
+    [clearThinkingTimeout, scheduleRecognitionRestart],
   );
 
   const debouncePostTranscript = useCallback(
@@ -307,6 +331,13 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       recognition.continuous = true;
       recognition.interimResults = true;
 
+      recognition.onstart = () => {
+        // A restarted Web Speech session begins its result indexes at zero.
+        lastProcessedIndexRef.current = -1;
+        clearRecognitionRestart();
+        if (wantsListeningRef.current && !speakingRef.current) setStatus("listening");
+      };
+
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
@@ -346,11 +377,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         // speaking (speak() stops recognition deliberately and restarts
         // it itself once done) -- restarting here too would race it.
         if (recognitionRef.current === recognition && wantsListeningRef.current && !speakingRef.current) {
-          try {
-            recognition.start();
-          } catch {
-            // already started -- ignore
-          }
+          scheduleRecognitionRestart();
         }
       };
 
@@ -365,12 +392,13 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         setStatus("error");
       }
     },
-    [Ctor, debouncePostTranscript],
+    [Ctor, debouncePostTranscript, clearRecognitionRestart, scheduleRecognitionRestart],
   );
 
   const stop = useCallback(() => {
     wantsListeningRef.current = false;
     clearThinkingTimeout();
+    clearRecognitionRestart();
     if (postTimeoutRef.current) {
       clearTimeout(postTimeoutRef.current);
       postTimeoutRef.current = null;
@@ -385,7 +413,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     callIdRef.current = null;
     setIsMutedState(false);
     setStatus("ended");
-  }, [clearThinkingTimeout]);
+  }, [clearThinkingTimeout, clearRecognitionRestart]);
 
   const setMuted = useCallback((muted: boolean) => {
     if (!recognitionRef.current || !callIdRef.current) return;
@@ -396,13 +424,8 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
       return;
     }
     setError(null);
-    setStatus("listening");
-    try {
-      recognitionRef.current.start();
-    } catch {
-      // The recognizer may already be transitioning back to started.
-    }
-  }, []);
+    scheduleRecognitionRestart(0);
+  }, [scheduleRecognitionRestart]);
 
   useEffect(() => stop, [stop]);
 
