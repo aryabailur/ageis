@@ -13,7 +13,8 @@ interface Row {
  * title attribute for anyone who wants them.
  */
 export function TimingBreakdown({ timingLog }: { timingLog: TimingEntry[] }) {
-  const rows: Row[] = timingLog.map((entry) => ({
+  const log = timingLog ?? [];
+  const rows: Row[] = log.map((entry) => ({
     step: entry.step,
     durationMs: entry.end === null ? null : (entry.end - entry.start) * 1000,
   }));

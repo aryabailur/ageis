@@ -22,8 +22,9 @@ export function IncidentIntakePanel({ state }: { state: DispatchState }) {
   const incident = state.incident;
   const wallClockStart = useWallClockStart(state.call_id);
   const [now, setNow] = useState(() => Date.now());
-  const lockedEntry = state.timing_log.find((e) => e.step === "reserve_ambulance" && e.end != null);
-  const startEntry = state.timing_log.find((e) => e.step === "ingest_call");
+  const log = state.timing_log ?? [];
+  const lockedEntry = log.find((e) => e.step === "reserve_ambulance" && e.end != null);
+  const startEntry = log.find((e) => e.step === "ingest_call");
   const isCardiac = incident?.chief_complaint === "CARDIAC";
 
   useEffect(() => {

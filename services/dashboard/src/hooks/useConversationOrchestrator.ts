@@ -57,6 +57,7 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
   const accumulatedTranscriptRef = useRef<string>("");
   const postTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProcessedIndexRef = useRef<number>(-1);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const clearThinkingTimeout = useCallback(() => {
     if (thinkingTimeoutRef.current) {
@@ -75,12 +76,14 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
     recognitionRef.current?.stop();
 
     const utterance = new SpeechSynthesisUtterance(text);
+    utteranceRef.current = utterance;
     // Hinglish/Hindi replies still read reasonably with a Hindi voice if
     // the OS has one; browsers fall back to a default voice otherwise.
     utterance.lang = /[ऀ-ॿ]/.test(text) ? "hi-IN" : "en-IN";
 
     utterance.onend = () => {
       speakingRef.current = false;
+      utteranceRef.current = null;
       const isReady = useVoiceStore.getState().readyForDispatch;
       if (isReady) {
         wantsListeningRef.current = false;
@@ -93,16 +96,28 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         callIdRef.current = null;
         setStatus("ended");
       } else if (wantsListeningRef.current) {
+        // Reset accumulated text so the NEXT turn starts fresh -- without
+        // this, the dedup logic compares new speech against the previous
+        // turn's text and silently discards every follow-up reply.
+        accumulatedTranscriptRef.current = "";
+        lastProcessedIndexRef.current = -1;
         setStatus("listening");
-        try {
-          recognitionRef.current?.start();
-        } catch {
-          // already started -- ignore
-        }
+        // Brief delay required on mobile Chrome: calling .start() immediately
+        // after TTS completes can silently fail with no error event.
+        setTimeout(() => {
+          if (!wantsListeningRef.current || speakingRef.current) return;
+          try {
+            recognitionRef.current?.start();
+          } catch {
+            // already started -- ignore
+          }
+        }, 250);
       }
     };
-    utterance.onerror = () => {
+    utterance.onerror = (e) => {
+      console.error("[AEGIS] SpeechSynthesis error:", e);
       speakingRef.current = false;
+      utteranceRef.current = null;
       const isReady = useVoiceStore.getState().readyForDispatch;
       if (isReady) {
         wantsListeningRef.current = false;
@@ -115,15 +130,21 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
         callIdRef.current = null;
         setStatus("ended");
       } else if (wantsListeningRef.current) {
+        accumulatedTranscriptRef.current = "";
+        lastProcessedIndexRef.current = -1;
         setStatus("listening");
-        try {
-          recognitionRef.current?.start();
-        } catch {
-          // ignore
-        }
+        setTimeout(() => {
+          if (!wantsListeningRef.current || speakingRef.current) return;
+          try {
+            recognitionRef.current?.start();
+          } catch {
+            // ignore
+          }
+        }, 250);
       }
     };
 
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   }, [clearThinkingTimeout]);
 
@@ -177,6 +198,16 @@ export function useConversationOrchestrator(): UseConversationOrchestratorResult
             { timeout: 3000 },
           );
         });
+        // Push the caller's coordinates into the voice store as soon as we
+        // have them -- the dashboard map subscribes to these and will show
+        // the patient pin immediately during the live conversation, not just
+        // after the dispatch run produces a DispatchState with caller_lat.
+        if (geo) {
+          useVoiceStore.setState({
+            callerLat: geo.coords.latitude,
+            callerLng: geo.coords.longitude,
+          });
+        }
         const res = await fetch(`${ORCHESTRATOR_URL}/voice/browser/transcript`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

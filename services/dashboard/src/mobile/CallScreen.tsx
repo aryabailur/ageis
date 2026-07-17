@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useVoiceStore } from "../store/voiceStore";
+import { useDispatchStore } from "../store/dispatchStore";
 import type { ConversationStatus } from "../hooks/useConversationOrchestrator";
 import { TranscriptStream } from "./components/TranscriptStream";
 import { ExtractionStrip } from "./components/ExtractionStrip";
@@ -129,6 +130,61 @@ function EndCallButton({ onEnd }: { onEnd: () => void }) {
   );
 }
 
+function DispatchDecisionCard() {
+  const current = useDispatchStore((s) => s.current);
+  const isRunning = useDispatchStore((s) => s.isRunning);
+
+  if (isRunning) {
+    return (
+      <div className="mobile-dispatch-card mobile-dispatch-card-loading">
+        <div className="mobile-dispatch-spinner" aria-hidden="true">
+          <span className="mobile-dot" /><span className="mobile-dot" /><span className="mobile-dot" />
+        </div>
+        <p className="mobile-dispatch-loading-text">Dispatching nearest unit…</p>
+      </div>
+    );
+  }
+
+  const selected = current?.selected;
+
+  if (!selected) {
+    // Dispatch hasn't resolved yet or failed — show generic message
+    return (
+      <div className="mobile-dispatch-card">
+        <p className="mobile-dispatch-generic">Emergency services have been notified. Help is on the way.</p>
+      </div>
+    );
+  }
+
+  const { ambulance, hospital, ambulance_eta_minutes, hospital_eta_minutes } = selected;
+
+  return (
+    <div className="mobile-dispatch-card mobile-dispatch-card-confirmed">
+      <div className="mobile-dispatch-row">
+        <span className="mobile-dispatch-icon" aria-hidden="true">🚑</span>
+        <div className="mobile-dispatch-detail">
+          <span className="mobile-dispatch-label">Ambulance</span>
+          <span className="mobile-dispatch-value">{ambulance.id ?? "Unit dispatched"}</span>
+          {ambulance_eta_minutes != null && (
+            <span className="mobile-dispatch-eta">ETA {Math.round(ambulance_eta_minutes)} min</span>
+          )}
+        </div>
+      </div>
+      <div className="mobile-dispatch-divider" />
+      <div className="mobile-dispatch-row">
+        <span className="mobile-dispatch-icon" aria-hidden="true">🏥</span>
+        <div className="mobile-dispatch-detail">
+          <span className="mobile-dispatch-label">Hospital</span>
+          <span className="mobile-dispatch-value">{hospital.id ?? "Nearest hospital"}</span>
+          {hospital_eta_minutes != null && (
+            <span className="mobile-dispatch-eta">ETA {Math.round(hospital_eta_minutes)} min</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CallEndedScreen({ elapsed, onEnd }: { elapsed: number; onEnd: () => void }) {
   return (
     <div className="mobile-outcome-screen">
@@ -137,8 +193,9 @@ function CallEndedScreen({ elapsed, onEnd }: { elapsed: number; onEnd: () => voi
       </div>
       <h1 className="mobile-outcome-title">Help is on the way</h1>
       <p className="mobile-outcome-body">
-        Stay calm and stay on the line. Responders have been notified. Keep the patient still.
+        Stay calm. Responders have been notified. Keep the patient still and follow any instructions given.
       </p>
+      <DispatchDecisionCard />
       <p className="mobile-outcome-duration">Call duration: {formatDuration(elapsed)}</p>
       <button className="mobile-outcome-btn" onClick={onEnd}>
         Done

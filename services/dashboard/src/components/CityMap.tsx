@@ -3,6 +3,7 @@ import { GoogleMap, OverlayView, Polyline, useJsApiLoader } from "@react-google-
 import type { Ambulance, DispatchState, FleetSnapshot, Hospital } from "../types";
 import { useDeviceLocation } from "../hooks/useDeviceLocation";
 import { useNearbyHospitals } from "../hooks/useNearbyHospitals";
+import { useVoiceStore } from "../store/voiceStore";
 
 interface Props {
   fleet: FleetSnapshot | null;
@@ -50,7 +51,8 @@ function hospitalColorClass(status: string): string {
  * position (0) rather than faking motion with no real signal behind it.
  */
 function ambulanceProgress(state: DispatchState): number {
-  const dispatchedOrLater = state.timing_log.some((e) => e.step === "simulate_dispatch" && e.end != null);
+  const log = state.timing_log ?? [];
+  const dispatchedOrLater = log.some((e) => e.step === "simulate_dispatch" && e.end != null);
   return dispatchedOrLater ? 1 : 0;
 }
 
@@ -84,8 +86,14 @@ export function CityMap({ fleet, current }: Props) {
   const device = useDeviceLocation();
   const { hospitals: nearbyHospitals } = useNearbyHospitals(device.lat, device.lng, GOOGLE_MAPS_KEY);
 
-  const incidentLat = current?.caller_lat ?? null;
-  const incidentLng = current?.caller_lng ?? null;
+  // Prefer the dispatch result's coords (most accurate — set by the backend
+  // after triage). Fall back to the live voice store's coords, which the
+  // mobile conversation hook pushes in on the first transcript POST so the
+  // patient pin appears during the call, before dispatch runs.
+  const voiceCallerLat = useVoiceStore((s) => s.callerLat);
+  const voiceCallerLng = useVoiceStore((s) => s.callerLng);
+  const incidentLat = current?.caller_lat ?? voiceCallerLat;
+  const incidentLng = current?.caller_lng ?? voiceCallerLng;
   const ambulances: Ambulance[] = fleet?.ambulances ?? [];
   const hospitals: Hospital[] = fleet?.hospitals ?? [];
 

@@ -13,7 +13,8 @@ export function SurvivalMeter({
     return null; // decay model is cardiac-specific; don't fake it for other complaints
   }
 
-  const aegisSeconds = timingLog.reduce((sum, entry) => sum + (entry.end === null ? 0 : entry.end - entry.start), 0);
+  const log = timingLog ?? [];
+  const aegisSeconds = log.reduce((sum, entry) => sum + (entry.end === null ? 0 : entry.end - entry.start), 0);
   const aegisSurvival = survivalAt(aegisSeconds);
   const naiveSurvival = survivalAt(NAIVE_DISPATCH_SECONDS);
   const gapPoints = (aegisSurvival - naiveSurvival) * 100;

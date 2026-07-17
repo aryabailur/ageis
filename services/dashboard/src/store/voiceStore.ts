@@ -63,6 +63,11 @@ interface VoiceStore {
   callDurationS: number;
   source: VoiceSource | null;
   isSocketConnected: boolean;
+  /** Caller's GPS coordinates — populated as soon as the first call_status
+   * event arrives with location data, so the map can show the patient pin
+   * during the live conversation before dispatch runs. */
+  callerLat: number | null;
+  callerLng: number | null;
   /** Live patient-detail extraction from the AI conversation feature.
    * Additive: only populated when conversation_mode is used; the
    * existing manual browser-mic / Twilio flows never touch this. */
@@ -96,6 +101,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   callDurationS: 0,
   source: null,
   isSocketConnected: false,
+  callerLat: null,
+  callerLng: null,
   patientDetails: {},
   conversationMessages: [],
   readyForDispatch: false,
@@ -129,6 +136,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
           callDurationS: payload.duration_s ?? s.callDurationS,
           source: payload.source ?? s.source,
           readyForDispatch: payload.ready_for_dispatch ?? s.readyForDispatch,
+          // Capture coords as soon as they arrive so the map can show the
+          // patient pin during the live call, before dispatch runs.
+          callerLat: payload.caller_lat != null ? payload.caller_lat : s.callerLat,
+          callerLng: payload.caller_lng != null ? payload.caller_lng : s.callerLng,
           dispatchReadyPayload: payload.ready_for_dispatch
             ? {
                 call_id: payload.call_id,
@@ -214,6 +225,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       callStatus: "idle",
       callDurationS: 0,
       source: null,
+      callerLat: null,
+      callerLng: null,
       patientDetails: {},
       conversationMessages: [],
       readyForDispatch: false,
